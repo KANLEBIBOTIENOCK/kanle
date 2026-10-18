@@ -253,23 +253,27 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
       );
     }
 
-    // 2. Détection de Routine récurrente (ex: "routine sport chaque matin de 7h à 8h", "créer une routine du lundi au vendredi")
-    final isRoutineIntent = lower.contains('routine') ||
-        lower.contains('habitude') ||
-        (lower.contains('tous les') && (lower.contains('matin') || lower.contains('soir'))) ||
-        (lower.contains('chaque') && (lower.contains('matin') || lower.contains('soir')));
+    // 2. Détection prioritaire de Blocs & Routines (plage horaire début - fin, mot "bloc", "routine", "habitude")
+    final blockRegex = RegExp(
+        r'(?:de\s+)?(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(?:à|au|-)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?',
+        caseSensitive: false);
+    final matchBlock = blockRegex.firstMatch(lower);
 
-    if (isRoutineIntent) {
-      final blockRegex = RegExp(r'(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(?:à|au|-)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?');
-      final matchBlock = blockRegex.firstMatch(lower);
+    final hasBlockOrRoutineIntent = matchBlock != null ||
+        lower.contains('bloc') ||
+        lower.contains('créneau') ||
+        lower.contains('creneau') ||
+        lower.contains('routine') ||
+        lower.contains('habitude');
 
-      int startMin = 420; // 07:00 par défaut
-      int endMin = 480;   // 08:00 par défaut
+    if (hasBlockOrRoutineIntent) {
+      int startMin = 540; // 09:00 par défaut
+      int endMin = 600;   // 10:00 par défaut
 
       if (matchBlock != null) {
-        final h1 = int.tryParse(matchBlock.group(1) ?? '7') ?? 7;
+        final h1 = int.tryParse(matchBlock.group(1) ?? '9') ?? 9;
         final m1 = int.tryParse(matchBlock.group(2) ?? '0') ?? 0;
-        final h2 = int.tryParse(matchBlock.group(3) ?? '8') ?? 8;
+        final h2 = int.tryParse(matchBlock.group(3) ?? '10') ?? 10;
         final m2 = int.tryParse(matchBlock.group(4) ?? '0') ?? 0;
         startMin = (h1 * 60 + m1).clamp(0, 1439);
         endMin = (h2 * 60 + m2).clamp(0, 1440);
@@ -278,12 +282,26 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
         final singleTimeRegex = RegExp(r'(\d{1,2})\s*(?:h|:)\s*(\d{2})?');
         final singleMatch = singleTimeRegex.firstMatch(lower);
         if (singleMatch != null) {
-          final h = int.tryParse(singleMatch.group(1) ?? '7') ?? 7;
+          final h = int.tryParse(singleMatch.group(1) ?? '9') ?? 9;
           final m = int.tryParse(singleMatch.group(2) ?? '0') ?? 0;
           startMin = (h * 60 + m).clamp(0, 1439);
           endMin = (startMin + 60).clamp(0, 1440);
         }
       }
+
+      final isRecurring = lower.contains('chaque jour') ||
+          lower.contains('tous les jours') ||
+          lower.contains('chaque matin') ||
+          lower.contains('tous les matins') ||
+          lower.contains('chaque soir') ||
+          lower.contains('tous les soirs') ||
+          lower.contains('quotidien') ||
+          lower.contains('lundi au vendredi') ||
+          lower.contains('semaine') ||
+          lower.contains('week-end') ||
+          lower.contains('weekend') ||
+          lower.contains('routine') ||
+          lower.contains('habitude');
 
       // Jours concernés
       List<int> weekdays = [1, 2, 3, 4, 5, 6, 7];
@@ -296,56 +314,84 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
         daysDesc = 'Week-end';
       }
 
-      // Catégorie
-      var cat = 'routine';
-      if (lower.contains('sport') || lower.contains('gym') || lower.contains('courir')) cat = 'sport';
-      if (lower.contains('prière') || lower.contains('priere') || lower.contains('méditer')) cat = 'prayer';
+      // Déduction de la catégorie
+      var cat = 'work';
+      if (lower.contains('manger') || lower.contains('repas') || lower.contains('déjeuner') || lower.contains('dîner') || lower.contains('petit-déjeuner') || lower.contains('cuisine')) cat = 'routine';
+      if (lower.contains('routine') || lower.contains('habitude') || lower.contains('vie') || lower.contains('quotidien')) cat = 'routine';
+      if (lower.contains('sport') || lower.contains('gym') || lower.contains('courir') || lower.contains('fitness')) cat = 'sport';
+      if (lower.contains('prière') || lower.contains('priere') || lower.contains('méditer') || lower.contains('foi')) cat = 'prayer';
       if (lower.contains('étude') || lower.contains('etude') || lower.contains('lire') || lower.contains('lecture')) cat = 'study';
-      if (lower.contains('travail') || lower.contains('boulot')) cat = 'work';
-      if (lower.contains('repos') || lower.contains('détente')) cat = 'rest';
+      if (lower.contains('repos') || lower.contains('pause') || lower.contains('sieste') || lower.contains('détente')) cat = 'rest';
 
-      // Titre
+      // Extraction et nettoyage propre du titre
       var title = prompt;
       title = title.replaceAll(
-          RegExp(r"créer une routine|ajoute une routine|crée une routine|nouvelle routine|routine|habitude|tous les matins|chaque matin|tous les soirs|chaque soir|tous les jours|chaque jour|du lundi au vendredi|le week-end",
+          RegExp(r"créer des blocs|créer un bloc|crée des blocs|crée un bloc|ajouter des blocs|ajouter un bloc|ajoute des blocs|ajoute un bloc|planifier un bloc|planifie un bloc|planifier|planifie|un bloc|des blocs|le bloc|les blocs|blocs|bloc|créneau|créer une routine|ajoute une routine|routine|habitude",
+              caseSensitive: false),
+          '');
+      title = title.replaceAll(
+          RegExp(r"chaque jour|tous les jours|tous les matins|chaque matin|tous les soirs|chaque soir|du lundi au vendredi|le week-end|aujourd'hui|demain",
               caseSensitive: false),
           '');
       if (matchBlock != null) {
         title = title.replaceAll(matchBlock.group(0)!, '');
       }
-      title = title.replaceAll(RegExp(r'^\s*(?:de|à)\s*', caseSensitive: false), '').trim();
-      if (title.isEmpty) title = 'Routine quotidienne';
+      title = title.replaceAll(RegExp(r'^\s*(?:de|à|au|-)\s*', caseSensitive: false), '');
+      title = title.replaceAll(RegExp(r'["'']'), '').trim();
+      if (title.isEmpty) title = isRecurring ? 'Routine quotidienne' : 'Nouveau créneau';
       title = title[0].toUpperCase() + title.substring(1);
 
-      actions.add(AiAction(
-        id: _uuid.v4(),
-        type: 'add_routine',
-        description: 'Créer la routine récurrente : "$title" (${fmtMin(startMin)} - ${fmtMin(endMin)}, $daysDesc)',
-        payload: {
-          'title': title,
-          'startMin': startMin,
-          'endMin': endMin,
-          'category': cat,
-          'weekdays': weekdays,
-        },
-      ));
+      final dateTarget = lower.contains('demain') ? tomorrowStr : todayStr;
 
-      return (
-        text: 'Excellente idée ! J\'ai configuré votre routine récurrente. Dès que vous l\'appliquez, elle apparaîtra dans votre écran Routines et créera automatiquement vos blocs sur le planning et dans vos statistiques.',
-        actions: actions
-      );
+      if (isRecurring) {
+        actions.add(AiAction(
+          id: _uuid.v4(),
+          type: 'add_routine',
+          description: 'Créer la routine récurrente : "$title" (${fmtMin(startMin)} - ${fmtMin(endMin)}, $daysDesc)',
+          payload: {
+            'title': title,
+            'startMin': startMin,
+            'endMin': endMin,
+            'category': cat,
+            'weekdays': weekdays,
+            'isRoutine': true,
+          },
+        ));
+
+        return (
+          text: 'Excellente idée ! J\'ai préparé la routine "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} ($daysDesc). Dès validation, elle sera visible dans vos Routines & Habitudes et planifiée sur vos journées.',
+          actions: actions
+        );
+      } else {
+        actions.add(AiAction(
+          id: _uuid.v4(),
+          type: 'add_block',
+          description: 'Planifier le bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} le $dateTarget',
+          payload: {
+            'title': title,
+            'date': dateTarget,
+            'startMin': startMin,
+            'endMin': endMin,
+            'category': cat,
+            'isRoutine': cat == 'routine',
+          },
+        ));
+
+        return (
+          text: 'C\'est noté ! J\'ai préparé la planification du bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} sur votre planning.',
+          actions: actions
+        );
+      }
     }
 
-    // 3. Détection de création / gestion de tâche (ex: "appeler maman tous les jours a 20h", "prendre médicaments à 8h")
+    // 3. Détection de création / gestion de tâche simple to-do (sans début/fin, ex: "appeler maman à 20h", "prendre médicaments à 8h")
     final isTaskIntent = lower.contains('tâche') ||
         lower.contains('tache') ||
         lower.contains('appeler') ||
         lower.contains('rappelle') ||
         lower.contains('penser à') ||
         lower.contains('médicament') ||
-        lower.contains('maman') ||
-        lower.contains('tous les jours') ||
-        lower.contains('chaque jour');
+        lower.contains('maman');
 
     if (isTaskIntent) {
       final isDaily = lower.contains('tous les jours') ||
@@ -376,8 +422,8 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
         title = title.replaceAll(timeMatch.group(0)!, '');
       }
       title = title.replaceAll(RegExp(r'^\s*à\s*', caseSensitive: false), '').trim();
+      title = title.replaceAll(RegExp(r'["'']'), '').trim();
       if (title.isEmpty) title = prompt.trim();
-      // Capitaliser première lettre
       if (title.isNotEmpty) {
         title = title[0].toUpperCase() + title.substring(1);
       }
@@ -402,70 +448,6 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
         text: isDaily
             ? 'C\'est noté ! Je vous propose de programmer cette tâche quotidienne avec rappel automatique.'
             : 'Parfait ! Je vous propose d\'ajouter cette tâche ponctuelle avec son alarme.',
-        actions: actions
-      );
-    }
-
-    // 3. Détection de création de bloc de planning (ex: "ajouter travail de 14h à 16h")
-    final blockRegex = RegExp(r'(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(?:à|au|-)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?');
-    final matchBlock = blockRegex.firstMatch(lower);
-    if (matchBlock != null || lower.contains('bloc') || lower.contains('planifie') || lower.contains('créneau')) {
-      int startMin = 540; // 09:00 par défaut
-      int endMin = 600;   // 10:00 par défaut
-      if (matchBlock != null) {
-        final h1 = int.tryParse(matchBlock.group(1) ?? '9') ?? 9;
-        final m1 = int.tryParse(matchBlock.group(2) ?? '0') ?? 0;
-        final h2 = int.tryParse(matchBlock.group(3) ?? '10') ?? 10;
-        final m2 = int.tryParse(matchBlock.group(4) ?? '0') ?? 0;
-        startMin = (h1 * 60 + m1).clamp(0, 1439);
-        endMin = (h2 * 60 + m2).clamp(0, 1440);
-        if (endMin <= startMin) endMin = (startMin + 60).clamp(0, 1440);
-      }
-
-      var title = prompt;
-      title = title.replaceAll(
-          RegExp(r'ajouter|ajoute|créer|planifie|un bloc|le bloc',
-              caseSensitive: false),
-          '');
-      if (matchBlock != null) {
-        title = title.replaceAll(matchBlock.group(0)!, '');
-      }
-      title = title.replaceAll(
-          RegExp(r"aujourd'hui|demain|de|à", caseSensitive: false),
-          '').trim();
-      if (title.isEmpty) title = 'Nouveau créneau';
-      title = title[0].toUpperCase() + title.substring(1);
-
-      // Déduction de la catégorie
-      var cat = 'work';
-      if (lower.contains('routine') || lower.contains('habitude') || lower.contains('vie') || lower.contains('quotidien')) cat = 'routine';
-      if (lower.contains('sport') || lower.contains('gym') || lower.contains('courir')) cat = 'sport';
-      if (lower.contains('prière') || lower.contains('priere') || lower.contains('méditer')) cat = 'prayer';
-      if (lower.contains('étude') || lower.contains('etude') || lower.contains('lire')) cat = 'study';
-      if (lower.contains('repos') || lower.contains('pause') || lower.contains('sieste')) cat = 'rest';
-
-      final dateTarget = lower.contains('demain') ? tomorrowStr : todayStr;
-      final isRoutineFlag = cat == 'routine' || lower.contains('routine') || lower.contains('habitude');
-
-      actions.add(AiAction(
-        id: _uuid.v4(),
-        type: isRoutineFlag ? 'add_routine' : 'add_block',
-        description: isRoutineFlag
-            ? 'Créer la routine/habitude "$title" (${fmtMin(startMin)} - ${fmtMin(endMin)})'
-            : 'Planifier le bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} le $dateTarget',
-        payload: {
-          'title': title,
-          'date': dateTarget,
-          'startMin': startMin,
-          'endMin': endMin,
-          'category': cat,
-          'isRoutine': isRoutineFlag,
-          'weekdays': [1, 2, 3, 4, 5, 6, 7],
-        },
-      ));
-
-      return (
-        text: 'J\'ai préparé la planification de votre bloc de temps dans le planning.',
         actions: actions
       );
     }
