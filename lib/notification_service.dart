@@ -196,4 +196,96 @@ class NotificationService {
       }
     }
   }
+
+  /// Annule les notifications associées à une tâche
+  static Future<void> cancelTask(TaskItem task) async {
+    if (!_ready) return;
+    await _plugin.cancel(id: task.notifId);
+    // Pour les tâches récurrentes sur plusieurs jours, annuler également les IDs dérivés
+    for (var w = 1; w <= 7; w++) {
+      await _plugin.cancel(id: (task.notifId + w) & 0x7FFFFFFF);
+    }
+  }
+
+  /// Programme le rappel d'une tâche (ponctuelle ou récurrente)
+  static Future<void> scheduleTask(TaskItem task) async {
+    if (!_ready) return;
+    await cancelTask(task);
+    if (task.timeMin == null) return;
+
+    final hour = task.timeMin! ~/ 60;
+    final minute = task.timeMin! % 60;
+    final now = tz.TZDateTime.now(tz.local);
+
+    if (task.isDaily) {
+      // Rappel quotidien à heure fixe
+      var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+      if (target.isBefore(now)) {
+        target = target.add(const Duration(days: 1));
+      }
+      try {
+        await _plugin.zonedSchedule(
+          id: task.notifId,
+          title: 'Tâche : ${task.title}',
+          body: 'Rappel quotidien prévu à ${fmtMin(task.timeMin!)}',
+          scheduledDate: target,
+          notificationDetails: const NotificationDetails(android: _androidDetails),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.time,
+        );
+      } catch (e) {
+        debugPrint('Erreur planification tâche quotidienne: $e');
+      }
+    } else if (task.weekdays.isNotEmpty) {
+      // Rappel sur jours de semaine spécifiques
+      for (final w in task.weekdays) {
+        final subId = (task.notifId + w) & 0x7FFFFFFF;
+        var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+        while (target.weekday != w || target.isBefore(now)) {
+          target = target.add(const Duration(days: 1));
+        }
+        try {
+          await _plugin.zonedSchedule(
+            id: subId,
+            title: 'Tâche : ${task.title}',
+            body: 'Rappel planifié à ${fmtMin(task.timeMin!)}',
+            scheduledDate: target,
+            notificationDetails: const NotificationDetails(android: _androidDetails),
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+          );
+        } catch (e) {
+          debugPrint('Erreur planification tâche weekday: $e');
+        }
+      }
+    } else if (task.date != null) {
+      // Tâche ponctuelle à date et heure précises
+      final p = task.date!.split('-').map(int.parse).toList();
+      final target = tz.TZDateTime(tz.local, p[0], p[1], p[2], hour, minute);
+      if (target.isAfter(now)) {
+        try {
+          await _plugin.zonedSchedule(
+            id: task.notifId,
+            title: 'Tâche : ${task.title}',
+            body: 'Rappel prévu maintenant (${fmtMin(task.timeMin!)})',
+            scheduledDate: target,
+            notificationDetails: const NotificationDetails(android: _androidDetails),
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          );
+        } catch (e) {
+          debugPrint('Erreur planification tâche ponctuelle: $e');
+        }
+      }
+    }
+  }
+
+  /// Re-planifie toutes les tâches actives
+  static Future<void> rescheduleAllTasks(List<TaskItem> tasks) async {
+    if (!_ready) return;
+    for (final t in tasks) {
+      if (!t.done || t.isRecurring) {
+        await scheduleTask(t);
+      }
+    }
+  }
 }

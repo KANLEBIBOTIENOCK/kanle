@@ -16,6 +16,305 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   int _days = 7;
 
+  void _showAddCategoryDialog(BuildContext context, VoidCallback onAdded) {
+    final textController = TextEditingController();
+    Color selectedColor = kPalette[1]; // Indigo
+    IconData selectedIcon = Icons.category_rounded;
+
+    final availableIcons = kAvailableCategoryIcons;
+
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setDlgState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.add_circle_outline_rounded, color: Color(0xFF6C5CE7)),
+                SizedBox(width: 8),
+                Text('Nouvelle Catégorie', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: textController,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Nom de la catégorie',
+                      hintText: 'Ex: Musique, Lecture, Projet...',
+                      prefixIcon: Icon(selectedIcon, color: selectedColor),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Couleur :', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: kPalette.map((col) {
+                      final isSelected = col.value == selectedColor.value;
+                      return GestureDetector(
+                        onTap: () => setDlgState(() => selectedColor = col),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: col,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? Colors.black87 : Colors.transparent,
+                              width: 2.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: col.withOpacity(0.35),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check, size: 16, color: Colors.white)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Icône :', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 120,
+                    child: GridView.builder(
+                      itemCount: availableIcons.length,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                      ),
+                      itemBuilder: (_, i) {
+                        final ic = availableIcons[i];
+                        final isSel = ic == selectedIcon;
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => setDlgState(() => selectedIcon = ic),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSel ? selectedColor.withOpacity(0.18) : Colors.grey.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSel ? selectedColor : Colors.transparent,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Icon(ic, size: 20, color: isSel ? selectedColor : Colors.grey.shade700),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF6C5CE7),
+                ),
+                onPressed: () {
+                  final name = textController.text.trim();
+                  if (name.isEmpty) return;
+                  final s = context.read<AppState>();
+                  final id = 'cat_${DateTime.now().millisecondsSinceEpoch}';
+                  final newCat = CategoryInfo(
+                    id: id,
+                    name: name,
+                    icon: selectedIcon,
+                    defaultColor: selectedColor,
+                    isCustom: true,
+                  );
+                  s.addCategory(newCat);
+                  Navigator.pop(dlgCtx);
+                  onAdded();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      content: Text('Catégorie "$name" créée avec succès !'),
+                    ),
+                  );
+                },
+                child: const Text('Créer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showCategoryManager(BuildContext context) {
+    HapticFeedback.selectionClick();
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E1E2C) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final s = context.watch<AppState>();
+          final categories = s.categories;
+
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Icon(Icons.category_rounded, color: Color(0xFF6C5CE7), size: 24),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Gestion des Catégories',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6C5CE7),
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 20),
+                  label: const Text('Ajouter une catégorie', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    _showAddCategoryDialog(context, () => setSheetState(() {}));
+                  },
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: categories.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final cat = categories[i];
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF28283C) : const Color(0xFFF7F8FC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.withOpacity(0.15)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: cat.defaultColor.withOpacity(0.18),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(cat.icon, size: 18, color: cat.defaultColor),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    cat.name,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  Text(
+                                    cat.isCustom ? 'Personnalisée' : 'Par défaut',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: cat.isCustom ? const Color(0xFF6C5CE7) : Colors.grey,
+                                      fontWeight: cat.isCustom ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (cat.isCustom)
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                onPressed: () {
+                                  showDialog(
+                                    context: ctx,
+                                    builder: (delCtx) => AlertDialog(
+                                      title: const Text('Supprimer la catégorie ?'),
+                                      content: Text(
+                                        'Voulez-vous supprimer "${cat.name}" ? Les créneaux associés seront automatiquement réassignés.',
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(delCtx), child: const Text('Annuler')),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(delCtx);
+                                            s.deleteCategory(cat.id);
+                                            setSheetState(() {});
+                                          },
+                                          child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
@@ -37,8 +336,12 @@ class _StatsScreenState extends State<StatsScreen> {
     final periodLabel = _days == 1
         ? 'Aujourd\'hui'
         : _days == 7
-            ? '7 jours'
+            ? 'Cette semaine'
             : '30 jours';
+
+    final activeRoutinesCount = s.routines.length;
+    final activeTasksCount = s.tasks.length;
+    final doneTasksCount = s.tasks.where((t) => t.isDoneForDate(now)).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -47,6 +350,13 @@ class _StatsScreenState extends State<StatsScreen> {
           'Statistiques & Suivi',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Gérer les catégories',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () => _showCategoryManager(context),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
@@ -62,7 +372,7 @@ class _StatsScreenState extends State<StatsScreen> {
               children: [
                 for (final opt in [
                   (1, 'Aujourd\'hui'),
-                  (7, '7 jours'),
+                  (7, 'Cette semaine'),
                   (30, '30 jours'),
                 ])
                   Expanded(
@@ -142,6 +452,36 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+
+          // Mini bandeau Tâches IA & Routines
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey.withOpacity(0.12)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.repeat_rounded, size: 18, color: Color(0xFFE17055)),
+                const SizedBox(width: 6),
+                Text(
+                  'Routines : $activeRoutinesCount',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+                const Spacer(),
+                Container(width: 1, height: 16, color: Colors.grey.withOpacity(0.2)),
+                const Spacer(),
+                const Icon(Icons.task_alt_rounded, size: 18, color: Color(0xFF00B894)),
+                const SizedBox(width: 6),
+                Text(
+                  'Tâches : $doneTasksCount/$activeTasksCount faites',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
 
           // Graphique
@@ -205,11 +545,14 @@ class _StatsScreenState extends State<StatsScreen> {
                                 return const SizedBox.shrink();
                               }
                               final d = daily[idx].$1;
+                              final rawDay = DateFormat('E', 'fr_FR').format(d).replaceAll('.', '').trim();
                               final txt = _days == 1
                                   ? 'Aujourd\'hui'
                                   : _days == 30
                                       ? '${d.day}/${d.month}'
-                                      : DateFormat('E', 'fr_FR').format(d).substring(0, 2);
+                                      : (rawDay.isNotEmpty
+                                          ? rawDay[0].toUpperCase() + (rawDay.length > 2 ? rawDay.substring(1, 3) : rawDay.substring(1))
+                                          : '');
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Text(
@@ -269,9 +612,31 @@ class _StatsScreenState extends State<StatsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Répartition par catégorie ($periodLabel)',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Répartition par catégorie ($periodLabel)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.tune_rounded, size: 15, color: Color(0xFF6C5CE7)),
+                      label: const Text(
+                        'Gérer',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6C5CE7)),
+                      ),
+                      onPressed: () => _showCategoryManager(context),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
                 if (byCat.isEmpty)
@@ -291,9 +656,9 @@ class _StatsScreenState extends State<StatsScreen> {
                   for (final item in byCat)
                     Builder(
                       builder: (_) {
-                        final cat = getCategoryById(item.key);
+                        final cat = getCategoryById(item.key, s.categories);
                         final pct = totalPlannedMinutes > 0
-                            ? (item.value / totalPlannedMinutes)
+                            ? (item.value / totalPlannedMinutes).clamp(0.0, 1.0)
                             : 0.0;
 
                         return Padding(
@@ -316,12 +681,15 @@ class _StatsScreenState extends State<StatsScreen> {
                                   Expanded(
                                     child: Text(
                                       cat.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 13,
                                       ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Text(
                                     '${(item.value / 60).toStringAsFixed(1)} h (${(pct * 100).toInt()}%)',
                                     style: TextStyle(

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "dart": {
+      "command": "dart",
+      "args": ["run", "flutter_tools", "mcp"],
+      "description": "Serveur MCP pour l'outillage et l'analyse Dart / Flutter"
+    },
+    "git": {
+      "command": "git",
+      "args": [],
+      "description": "Contrôle de version et gestion des branches / worktrees"
+    }
+  }
+}

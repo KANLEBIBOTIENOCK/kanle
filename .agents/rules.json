@@ -1,0 +1,8 @@
+{
+  "rules": [
+    "rules/flutter_architecture.md",
+    "rules/ai_assistant_rules.md",
+    "rules/data_persistence.md",
+    "rules/notifications_rules.md"
+  ]
+}

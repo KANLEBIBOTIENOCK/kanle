@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models.dart';
+import 'ai_assistant_screen.dart';
 import 'block_editor.dart';
 
 const double kHourHeight = 68;
@@ -358,6 +360,7 @@ class PlanningScreen extends StatelessWidget {
       body: Column(
         children: [
           _DateStrip(selected: date, onSelect: s.selectDate),
+          _TasksDaySection(date: date),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
             child: Row(
@@ -565,6 +568,8 @@ class _Timeline extends StatefulWidget {
 class _TimelineState extends State<_Timeline> {
   final _ctrl = ScrollController();
   double _hourHeight = 68.0;
+  Timer? _ticker;
+  DateTime _currentTime = DateTime.now();
 
   // Variables de gestion du pincement (pinch-to-zoom)
   final Map<int, Offset> _pointers = {};
@@ -574,9 +579,16 @@ class _TimelineState extends State<_Timeline> {
   @override
   void initState() {
     super.initState();
+    _currentTime = DateTime.now();
+    if (widget.showNow) {
+      _startTicker();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       double target = 0.0;
-      if (widget.blocks.isNotEmpty) {
+      if (widget.showNow) {
+        final nowMin = _currentTime.hour * 60.0 + _currentTime.minute;
+        target = ((nowMin / 60.0) * _hourHeight - 80).clamp(0.0, 24 * _hourHeight);
+      } else if (widget.blocks.isNotEmpty) {
         final minStart = widget.blocks.map((b) => b.startMin).reduce((a, b) => a < b ? a : b);
         target = ((minStart / 60.0) * _hourHeight - 40).clamp(0.0, 24 * _hourHeight);
       } else {
@@ -588,8 +600,32 @@ class _TimelineState extends State<_Timeline> {
     });
   }
 
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) {
+        setState(() {
+          _currentTime = DateTime.now();
+        });
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _Timeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.showNow && _ticker == null) {
+      _currentTime = DateTime.now();
+      _startTicker();
+    } else if (!widget.showNow && _ticker != null) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
   @override
   void dispose() {
+    _ticker?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -663,7 +699,6 @@ class _TimelineState extends State<_Timeline> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final now = DateTime.now();
 
     return Listener(
       onPointerDown: (event) {
@@ -770,45 +805,76 @@ class _TimelineState extends State<_Timeline> {
                           );
                         }(),
 
-                      // Ligne du temps présent
+                      // Ligne du temps présent haute précision
                       if (widget.showNow)
-                        Positioned(
-                          top: (now.hour * 60 + now.minute) / 60 * _hourHeight,
-                          left: kGutter - 5,
-                          right: 0,
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.redAccent.withOpacity(0.5),
-                                      blurRadius: 6,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: Container(
-                                  height: 2,
+                        () {
+                          final exactMinutes = _currentTime.hour * 60.0 +
+                              _currentTime.minute +
+                              (_currentTime.second / 60.0);
+                          final lineY = (exactMinutes / 60.0) * _hourHeight;
+
+                          return Positioned(
+                            top: lineY - 9.0,
+                            left: 2,
+                            right: 0,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        Colors.redAccent,
-                                        Colors.redAccent.withOpacity(0.2),
-                                      ],
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.redAccent.withOpacity(0.35),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    DateFormat('HH:mm').format(_currentTime),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.2,
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
+                                const SizedBox(width: 4),
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.redAccent.withOpacity(0.6),
+                                        blurRadius: 5,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Container(
+                                    height: 2,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.redAccent,
+                                          Colors.redAccent.withOpacity(0.2),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }(),
                     ],
                   );
                 },
@@ -986,3 +1052,248 @@ class _BlockCard extends StatelessWidget {
     );
   }
 }
+
+class _TasksDaySection extends StatefulWidget {
+  final DateTime date;
+  const _TasksDaySection({required this.date});
+
+  @override
+  State<_TasksDaySection> createState() => _TasksDaySectionState();
+}
+
+class _TasksDaySectionState extends State<_TasksDaySection> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    final dayTasks = s.tasksFor(widget.date);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final doneCount = dayTasks.where((t) => t.isDoneForDate(widget.date)).length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1B1B26) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: dayTasks.isNotEmpty
+              ? const Color(0xFF6C5CE7).withOpacity(0.25)
+              : Colors.grey.withOpacity(0.15),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // En-tête rétractable
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C5CE7).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.task_alt_rounded,
+                      size: 15,
+                      color: Color(0xFF6C5CE7),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      'Tâches du jour',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  if (dayTasks.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: doneCount == dayTasks.length
+                            ? Colors.green.withOpacity(0.15)
+                            : const Color(0xFF6C5CE7).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$doneCount/${dayTasks.length}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: doneCount == dayTasks.length
+                              ? Colors.green
+                              : const Color(0xFF6C5CE7),
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00CEC9).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome_rounded, size: 10, color: Color(0xFF00CEC9)),
+                        SizedBox(width: 3),
+                        Text(
+                          'IA',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF00CEC9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: Colors.grey,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Contenu de la liste des tâches
+          if (_expanded) ...[
+            const Divider(height: 1, indent: 12, endIndent: 12),
+            if (dayTasks.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Aucune tâche pour ce jour. Demandez à votre Assistant IA d\'en ajouter une !',
+                        style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AiAssistantScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF6C5CE7)),
+                      label: const Text('Assistant', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: dayTasks.map((t) {
+                    final isDone = t.isDoneForDate(widget.date);
+                    return InkWell(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        s.toggleTaskDone(t.id, widget.date);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        child: Row(
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isDone ? const Color(0xFF00B894) : Colors.transparent,
+                                border: Border.all(
+                                  color: isDone ? const Color(0xFF00B894) : Colors.grey.shade400,
+                                  width: 1.8,
+                                ),
+                              ),
+                              child: isDone
+                                  ? const Icon(Icons.check_rounded, size: 13, color: Colors.white)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    t.title,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      decoration: isDone ? TextDecoration.lineThrough : null,
+                                      color: isDone
+                                          ? Colors.grey
+                                          : (isDark ? Colors.white : Colors.black87),
+                                    ),
+                                  ),
+                                  if (t.isRecurring)
+                                    Text(
+                                      t.recurrenceLabel,
+                                      style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (t.timeMin != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  fmtMin(t.timeMin!),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 6),
+                            if (t.isDaily)
+                              const Icon(Icons.repeat_rounded, size: 14, color: Color(0xFF6C5CE7)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+

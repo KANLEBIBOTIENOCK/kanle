@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../ai_config.dart';
 import '../app_state.dart';
 import '../notification_service.dart';
 
@@ -40,7 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       debugPrint('Export file write error: $e');
     }
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     showDialog(
       context: context,
@@ -177,7 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final textCtrl = TextEditingController();
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     showDialog(
       context: context,
@@ -471,6 +472,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 20),
 
+          // Section IA : Intelligence Artificielle & Gemini
+          _buildSectionHeader('Assistant IA & Google Gemini', Icons.auto_awesome_rounded, theme),
+          const SizedBox(height: 8),
+          Material(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            elevation: 0.5,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.code_rounded, color: Color(0xFF6C5CE7)),
+                  title: const Text('Configuration IA dans le code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: Text(
+                    AiConfig.hasKey
+                        ? 'Clé Gemini active dans lib/ai_config.dart (${AiConfig.geminiModel})'
+                        : 'Fichier lib/ai_config.dart prêt (Moteur local intelligent actif)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AiConfig.hasKey ? const Color(0xFF00B894) : Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (AiConfig.hasKey ? const Color(0xFF00B894) : const Color(0xFF6C5CE7)).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      AiConfig.hasKey ? 'Gemini 1.5' : 'Actif',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AiConfig.hasKey ? const Color(0xFF00B894) : const Color(0xFF6C5CE7),
+                      ),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.task_alt_rounded, color: Color(0xFF00B894)),
+                  title: const Text('Gestion exclusive des Tâches', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: Text(
+                    '${s.tasks.length} tâche(s) orchestrée(s) par l\'IA (différentes des blocs de planning)',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
           // Section 2 : Sauvegarde & Données
           _buildSectionHeader('Gestion & Sauvegarde des Données', Icons.storage_rounded, theme),
           const SizedBox(height: 8),
@@ -508,27 +562,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: const Text('Importer'),
                   ),
                   onTap: () => _importBackup(context),
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-                ListTile(
-                  leading: const Icon(Icons.auto_fix_high_rounded, color: Color(0xFF6C5CE7)),
-                  title: const Text('Nettoyer les doublons', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
-                  subtitle: const Text('Détecte et purge les blocs dupliqués ou orphelins', style: TextStyle(fontSize: 12)),
-                  trailing: FilledButton.tonal(
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      final count = context.read<AppState>().cleanDuplicates();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(count > 0
-                              ? '$count bloc(s) en double supprimé(s).'
-                              : 'Aucun doublon : vos données sont déjà parfaitement optimisées !'),
-                        ),
-                      );
-                    },
-                    child: const Text('Optimiser'),
-                  ),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(

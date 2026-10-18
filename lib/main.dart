@@ -3,6 +3,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
 import 'notification_service.dart';
+import 'screens/ai_assistant_screen.dart';
 import 'screens/planning_screen.dart';
 import 'screens/routines_screen.dart';
 import 'screens/stats_screen.dart';
@@ -36,14 +37,15 @@ class KanleApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF7F8FC),
         cardColor: Colors.white,
         navigationBarTheme: NavigationBarThemeData(
-          height: 66,
+          height: 64,
           indicatorColor: primarySeed.withOpacity(0.18),
           labelTextStyle: WidgetStateProperty.resolveWith(
             (states) => TextStyle(
-              fontSize: 12,
+              fontSize: 10.5,
               fontWeight: states.contains(WidgetState.selected)
                   ? FontWeight.w800
                   : FontWeight.w500,
+              letterSpacing: -0.2,
             ),
           ),
         ),
@@ -58,15 +60,16 @@ class KanleApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0D0D12),
         cardColor: const Color(0xFF171722),
         navigationBarTheme: NavigationBarThemeData(
-          height: 66,
+          height: 64,
           backgroundColor: const Color(0xFF13131B),
           indicatorColor: primarySeed.withOpacity(0.28),
           labelTextStyle: WidgetStateProperty.resolveWith(
             (states) => TextStyle(
-              fontSize: 12,
+              fontSize: 10.5,
               fontWeight: states.contains(WidgetState.selected)
                   ? FontWeight.w800
                   : FontWeight.w500,
+              letterSpacing: -0.2,
             ),
           ),
         ),
@@ -89,6 +92,7 @@ class _HomeShellState extends State<HomeShell> {
   static const _pages = [
     PlanningScreen(),
     RoutinesScreen(),
+    AiAssistantScreen(),
     StatsScreen(),
     SettingsScreen(),
   ];
@@ -112,6 +116,11 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Routines',
           ),
           NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome_rounded),
+            label: 'Kanlé IA',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart_rounded),
             label: 'Stats',
@@ -119,7 +128,7 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Paramètres',
+            label: 'Réglages',
           ),
         ],
       ),

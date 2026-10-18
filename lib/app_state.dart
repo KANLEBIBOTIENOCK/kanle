@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'ai_config.dart';
+import 'ai_service.dart';
 import 'models.dart';
 import 'notification_service.dart';
 
@@ -9,21 +11,84 @@ class AppState extends ChangeNotifier {
   static const _kBlocks = 'blocks_v1';
   static const _kRoutines = 'routines_v1';
   static const _kDefaultReminder = 'default_reminder_v1';
+  static const _kTasks = 'tasks_v1';
+  static const _kChatHistory = 'chat_history_v1';
+  static const _kGeminiApiKey = 'gemini_api_key_v1';
+  static const _kCategories = 'categories_v1';
+  static const _kChatSessions = 'chat_sessions_v1';
+  static const _kCurrentSessionId = 'current_session_id_v1';
   final _uuid = const Uuid();
 
   List<TimeBlock> blocks = [];
   List<Routine> routines = [];
+  List<TaskItem> tasks = [];
+  List<CategoryInfo> categories = List.from(kCategories);
+  List<ChatSession> chatSessions = [];
+  String? currentSessionId;
+  String geminiApiKey = '';
+  bool isAiLoading = false;
+
   DateTime selectedDate = DateTime.now();
   int defaultReminder = 10;
   SharedPreferences? _prefs;
   static const _kApplied = 'applied_v1';
   Set<String> _applied = {}; // "routineId|date" déjà générés
 
+  void _syncCategoryRegistry() {
+    kCustomCategoriesRegistry.clear();
+    for (final c in categories) {
+      kCustomCategoriesRegistry[c.id] = c;
+    }
+  }
+
+  CategoryInfo getCategory(String? id) => getCategoryById(id, categories);
+
+  ChatSession get activeChatSession {
+    if (chatSessions.isEmpty) {
+      final s = ChatSession(
+        id: newId(),
+        title: 'Discussion générale',
+        createdAt: DateTime.now(),
+      );
+      chatSessions.add(s);
+      currentSessionId = s.id;
+      return s;
+    }
+    return chatSessions.firstWhere(
+      (s) => s.id == currentSessionId,
+      orElse: () => chatSessions.first,
+    );
+  }
+
+  List<ChatMessage> get chatHistory => activeChatSession.messages;
+  set chatHistory(List<ChatMessage> list) {
+    activeChatSession.messages = list;
+  }
+
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
     defaultReminder = _prefs!.getInt(_kDefaultReminder) ?? 10;
+    geminiApiKey = _prefs!.getString(_kGeminiApiKey) ?? '';
     final b = _prefs!.getString(_kBlocks);
     final r = _prefs!.getString(_kRoutines);
+    final t = _prefs!.getString(_kTasks);
+    final ch = _prefs!.getString(_kChatHistory);
+    final cats = _prefs!.getString(_kCategories);
+    final cs = _prefs!.getString(_kChatSessions);
+    currentSessionId = _prefs!.getString(_kCurrentSessionId);
+
+    if (cats != null) {
+      try {
+        final decoded = (jsonDecode(cats) as List)
+            .map((e) => CategoryInfo.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (decoded.isNotEmpty) {
+          categories = decoded;
+        }
+      } catch (_) {}
+    }
+    _syncCategoryRegistry();
+
     if (b != null) {
       blocks = (jsonDecode(b) as List)
           .map((e) => TimeBlock.fromJson(e as Map<String, dynamic>))
@@ -34,10 +99,49 @@ class AppState extends ChangeNotifier {
           .map((e) => Routine.fromJson(e as Map<String, dynamic>))
           .toList();
     }
+    if (t != null) {
+      tasks = (jsonDecode(t) as List)
+          .map((e) => TaskItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
+    // Gestion des sessions de chat et migration de l'ancien historique
+    List<ChatMessage> legacyChat = [];
+    if (ch != null) {
+      try {
+        legacyChat = (jsonDecode(ch) as List)
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
+    }
+
+    if (cs != null) {
+      try {
+        chatSessions = (jsonDecode(cs) as List)
+            .map((e) => ChatSession.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
+    }
+
+    if (chatSessions.isEmpty) {
+      final initialSession = ChatSession(
+        id: newId(),
+        title: legacyChat.isNotEmpty ? _summaryFromText(legacyChat.first.text) : 'Discussion générale',
+        createdAt: DateTime.now(),
+        messages: legacyChat,
+      );
+      chatSessions.add(initialSession);
+      currentSessionId = initialSession.id;
+    } else {
+      if (currentSessionId == null || !chatSessions.any((s) => s.id == currentSessionId)) {
+        currentSessionId = chatSessions.first.id;
+      }
+    }
+
     _applied = (_prefs!.getStringList(_kApplied) ?? []).toSet();
 
-    // Déduplication immédiate des blocs existants
-    _deduplicateBlocks();
+    // Audit et déduplication immédiate globale
+    runFullDeduplicationAudit();
 
     // Initialisation ou synchronisation de la semaine en cours
     applyWeek(DateTime.now());
@@ -53,17 +157,24 @@ class AppState extends ChangeNotifier {
         return dt.isAfter(now.subtract(const Duration(days: 1))) && dt.isBefore(nextWeek);
       }).toList(),
     );
+    NotificationService.rescheduleAllTasks(tasks);
     notifyListeners();
+  }
+
+  static String _summaryFromText(String text) {
+    final clean = text.replaceAll('\n', ' ').trim();
+    return clean.length > 32 ? '${clean.substring(0, 32)}...' : clean;
   }
 
   /// Détecte et élimine automatiquement tous les doublons de blocs
   int _deduplicateBlocks() {
     final seen = <String>{};
+    final seenIds = <String>{};
     final uniqueBlocks = <TimeBlock>[];
     var removed = 0;
     for (final b in blocks) {
       final sig = '${b.date}|${b.startMin}|${b.endMin}|${b.title.trim().toLowerCase()}';
-      if (seen.add(sig)) {
+      if (seen.add(sig) && seenIds.add(b.id)) {
         uniqueBlocks.add(b);
       } else {
         NotificationService.cancel(b.notifId);
@@ -76,14 +187,93 @@ class AppState extends ChangeNotifier {
     return removed;
   }
 
+  /// Détecte et élimine tous les doublons de routines
+  int _deduplicateRoutines() {
+    final seen = <String>{};
+    final seenIds = <String>{};
+    final unique = <Routine>[];
+    var removed = 0;
+    for (final r in routines) {
+      final daysKey = (r.weekdays.toList()..sort()).join(',');
+      final sig = '${r.title.trim().toLowerCase()}|${r.startMin}|${r.endMin}|$daysKey';
+      if (seen.add(sig) && seenIds.add(r.id)) {
+        unique.add(r);
+      } else {
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      routines = unique;
+    }
+    return removed;
+  }
+
+  /// Détecte et élimine tous les doublons de tâches IA
+  int _deduplicateTasks() {
+    final seen = <String>{};
+    final seenIds = <String>{};
+    final unique = <TaskItem>[];
+    var removed = 0;
+    for (final t in tasks) {
+      final daysKey = (t.weekdays.toList()..sort()).join(',');
+      final sig = '${t.title.trim().toLowerCase()}|${t.timeMin}|${t.date}|$daysKey';
+      if (seen.add(sig) && seenIds.add(t.id)) {
+        unique.add(t);
+      } else {
+        NotificationService.cancelTask(t);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      tasks = unique;
+    }
+    return removed;
+  }
+
+  /// Détecte et élimine les doublons de catégories
+  int _deduplicateCategories() {
+    final seen = <String>{};
+    final unique = <CategoryInfo>[];
+    var removed = 0;
+    for (final c in categories) {
+      final sig = c.name.trim().toLowerCase();
+      if (seen.add(sig)) {
+        unique.add(c);
+      } else {
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      categories = unique;
+      _syncCategoryRegistry();
+    }
+    return removed;
+  }
+
+  /// Audit complet et nettoyage de tous les doublons du système
+  Map<String, int> runFullDeduplicationAudit() {
+    final b = _deduplicateBlocks();
+    final r = _deduplicateRoutines();
+    final t = _deduplicateTasks();
+    final c = _deduplicateCategories();
+    return {
+      'blocks': b,
+      'routines': r,
+      'tasks': t,
+      'categories': c,
+      'total': b + r + t + c,
+    };
+  }
+
   /// Nettoie tous les doublons et persiste
   int cleanDuplicates() {
-    final count = _deduplicateBlocks();
-    if (count > 0) {
+    final audit = runFullDeduplicationAudit();
+    final total = audit['total'] ?? 0;
+    if (total > 0) {
       _save();
       notifyListeners();
     }
-    return count;
+    return total;
   }
 
   void setDefaultReminder(int val) {
@@ -112,7 +302,8 @@ class AppState extends ChangeNotifier {
         buffer.writeln('  Horaires: ${fmtMin(r.startMin)} - ${fmtMin(r.endMin)}');
         buffer.writeln('  Répétition: $daysStr');
         buffer.writeln('  Catégorie: ${r.category.name}');
-        buffer.writeln('  Rappel: ${r.reminderMin == 0 ? "À l\'heure" : "${r.reminderMin} min avant"}');
+        final reminderStr = r.reminderMin == 0 ? "À l'heure" : "${r.reminderMin} min avant";
+        buffer.writeln('  Rappel: $reminderStr');
         buffer.writeln('');
       }
     }
@@ -146,6 +337,17 @@ class AppState extends ChangeNotifier {
       });
     }
 
+    buffer.writeln('--- TÂCHES GÉRÉES PAR L\'IA (${tasks.length}) ---');
+    if (tasks.isEmpty) {
+      buffer.writeln('Aucune tâche enregistrée.\n');
+    } else {
+      for (final t in tasks) {
+        final timeStr = t.timeMin != null ? fmtMin(t.timeMin!) : 'sans heure';
+        buffer.writeln('• ${t.title} ($timeStr - ${t.recurrenceLabel})');
+      }
+      buffer.writeln('');
+    }
+
     buffer.writeln('==================================================');
     buffer.writeln('FICHIER DE DONNÉES JSON (POUR RESTAURATION) :');
     final backupData = {
@@ -154,6 +356,7 @@ class AppState extends ChangeNotifier {
       'defaultReminder': defaultReminder,
       'routines': routines.map((e) => e.toJson()).toList(),
       'blocks': blocks.map((e) => e.toJson()).toList(),
+      'tasks': tasks.map((e) => e.toJson()).toList(),
     };
     buffer.writeln(const JsonEncoder.withIndent('  ').convert(backupData));
     buffer.writeln('==================================================');
@@ -242,6 +445,25 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    // Restaurer les tâches IA
+    if (data['tasks'] is List) {
+      for (final item in data['tasks']) {
+        if (item is Map<String, dynamic>) {
+          try {
+            final t = TaskItem.fromJson(item);
+            final exists = tasks.any((x) =>
+                x.title.trim().toLowerCase() == t.title.trim().toLowerCase() &&
+                x.timeMin == t.timeMin &&
+                x.date == t.date);
+            if (!exists) {
+              tasks.add(t);
+              NotificationService.scheduleTask(t);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
     _deduplicateBlocks();
     _save();
     notifyListeners();
@@ -253,8 +475,99 @@ class AppState extends ChangeNotifier {
         _kBlocks, jsonEncode(blocks.map((e) => e.toJson()).toList()));
     _prefs?.setString(
         _kRoutines, jsonEncode(routines.map((e) => e.toJson()).toList()));
+    _prefs?.setString(
+        _kTasks, jsonEncode(tasks.map((e) => e.toJson()).toList()));
+    _prefs?.setString(
+        _kCategories, jsonEncode(categories.map((e) => e.toJson()).toList()));
+    _prefs?.setString(
+        _kChatSessions, jsonEncode(chatSessions.map((e) => e.toJson()).toList()));
+    if (currentSessionId != null) {
+      _prefs?.setString(_kCurrentSessionId, currentSessionId!);
+    }
+    _prefs?.setString(
+        _kChatHistory, jsonEncode(chatHistory.map((e) => e.toJson()).toList()));
+    _prefs?.setString(_kGeminiApiKey, geminiApiKey);
     _prefs?.setStringList(_kApplied, _applied.toList());
     _prefs?.setInt(_kDefaultReminder, defaultReminder);
+  }
+
+  // ==========================================
+  // GESTION DES CATÉGORIES DYNAMIQUES
+  // ==========================================
+
+  void addCategory(CategoryInfo cat) {
+    final existingIdx = categories.indexWhere(
+      (c) => c.name.trim().toLowerCase() == cat.name.trim().toLowerCase(),
+    );
+    if (existingIdx >= 0) {
+      categories[existingIdx] = cat;
+    } else {
+      categories.add(cat);
+    }
+    _syncCategoryRegistry();
+    _save();
+    notifyListeners();
+  }
+
+  bool deleteCategory(String catId) {
+    final fallbackCat = categories.isNotEmpty ? categories.first.id : 'prayer';
+    for (final b in blocks.where((b) => b.categoryId == catId)) {
+      b.categoryId = fallbackCat;
+    }
+    for (final r in routines.where((r) => r.categoryId == catId)) {
+      r.categoryId = fallbackCat;
+    }
+    categories.removeWhere((c) => c.id == catId);
+    _syncCategoryRegistry();
+    _save();
+    notifyListeners();
+    return true;
+  }
+
+  void updateCategory(CategoryInfo cat) {
+    final idx = categories.indexWhere((c) => c.id == cat.id);
+    if (idx >= 0) {
+      categories[idx] = cat;
+      _syncCategoryRegistry();
+      _save();
+      notifyListeners();
+    }
+  }
+
+  // ==========================================
+  // GESTION DES SESSIONS DU CHAT IA
+  // ==========================================
+
+  ChatSession startNewChatSession([String? title]) {
+    final s = ChatSession(
+      id: newId(),
+      title: title ?? 'Nouvelle discussion',
+      createdAt: DateTime.now(),
+    );
+    chatSessions.insert(0, s);
+    currentSessionId = s.id;
+    _save();
+    notifyListeners();
+    return s;
+  }
+
+  void switchChatSession(String sessionId) {
+    if (chatSessions.any((s) => s.id == sessionId)) {
+      currentSessionId = sessionId;
+      _save();
+      notifyListeners();
+    }
+  }
+
+  void deleteChatSession(String sessionId) {
+    chatSessions.removeWhere((s) => s.id == sessionId);
+    if (chatSessions.isEmpty) {
+      startNewChatSession();
+    } else if (currentSessionId == sessionId) {
+      currentSessionId = chatSessions.first.id;
+    }
+    _save();
+    notifyListeners();
   }
 
   String newId() => _uuid.v4();
@@ -470,7 +783,17 @@ class AppState extends ChangeNotifier {
     if (i >= 0) {
       routines[i] = r;
     } else {
-      routines.add(r);
+      // Détection anti-doublon (même titre et jours actifs)
+      final dupIdx = routines.indexWhere((e) =>
+          e.title.trim().toLowerCase() == r.title.trim().toLowerCase() &&
+          e.startMin == r.startMin &&
+          e.endMin == r.endMin &&
+          setEquals(e.weekdays, r.weekdays));
+      if (dupIdx >= 0) {
+        routines[dupIdx] = r;
+      } else {
+        routines.add(r);
+      }
     }
 
     // 1. Appliquer immédiatement à la semaine courante
@@ -559,6 +882,8 @@ class AppState extends ChangeNotifier {
     await NotificationService.cancelAll();
     blocks.clear();
     routines.clear();
+    tasks.clear();
+    chatHistory.clear();
     _applied.clear();
     _save();
     notifyListeners();
@@ -576,11 +901,19 @@ class AppState extends ChangeNotifier {
     return map;
   }
 
-  /// Minutes planifiées par catégorie sur [days] jours.
-  Map<String, int> minutesByCategory(DateTime end, {int days = 7}) {
-    final keys = {
-      for (var i = 0; i < days; i++) dateKey(end.subtract(Duration(days: i)))
-    };
+  /// Minutes planifiées par catégorie pour une période ([days] jours ou semaine courante si days == 7).
+  Map<String, int> minutesByCategory(DateTime anchor, {int days = 7}) {
+    final Set<String> keys;
+    if (days == 7) {
+      final monday = _startOfWeek(anchor);
+      keys = {for (var i = 0; i < 7; i++) dateKey(monday.add(Duration(days: i)))};
+    } else if (days == 1) {
+      keys = {dateKey(anchor)};
+    } else {
+      keys = {
+        for (var i = 0; i < days; i++) dateKey(anchor.subtract(Duration(days: i)))
+      };
+    }
     final map = <String, int>{};
     for (final b in blocks.where((b) => keys.contains(b.date))) {
       map[b.categoryId] = (map[b.categoryId] ?? 0) + b.duration;
@@ -588,13 +921,24 @@ class AppState extends ChangeNotifier {
     return map;
   }
 
-  /// (date, planifié, terminé) en minutes par jour sur [days] jours.
-  List<(DateTime, int, int)> dailyStats(DateTime end, {int days = 7}) {
+  /// (date, planifié, terminé) en minutes par jour pour la période.
+  List<(DateTime, int, int)> dailyStats(DateTime anchor, {int days = 7}) {
+    final List<DateTime> dateList;
+    if (days == 7) {
+      final monday = _startOfWeek(anchor);
+      dateList = [for (var i = 0; i < 7; i++) monday.add(Duration(days: i))];
+    } else if (days == 1) {
+      dateList = [DateTime(anchor.year, anchor.month, anchor.day)];
+    } else {
+      dateList = [
+        for (var i = days - 1; i >= 0; i--)
+          DateTime(anchor.year, anchor.month, anchor.day).subtract(Duration(days: i))
+      ];
+    }
+
     return [
-      for (var i = days - 1; i >= 0; i--)
+      for (final d in dateList)
         () {
-          final d = DateTime(end.year, end.month, end.day)
-              .subtract(Duration(days: i));
           final list = blocksFor(d);
           final planned = list.fold<int>(0, (s, b) => s + b.duration);
           final done =
@@ -602,5 +946,282 @@ class AppState extends ChangeNotifier {
           return (d, planned, done);
         }()
     ];
+  }
+
+  // ==========================================
+  // SECTION GESTION DES TÂCHES (UNIQUEMENT IA)
+  // ==========================================
+
+  /// Récupère toutes les tâches applicables à une date donnée
+  List<TaskItem> tasksFor(DateTime d) {
+    return tasks.where((t) => t.isApplicableForDate(d)).toList()
+      ..sort((a, b) {
+        if (a.timeMin == null && b.timeMin == null) return 0;
+        if (a.timeMin == null) return 1;
+        if (b.timeMin == null) return -1;
+        return a.timeMin!.compareTo(b.timeMin!);
+      });
+  }
+
+  /// Ajoute une nouvelle tâche et programme son alarme avec protection anti-doublon
+  void addTask(TaskItem task) {
+    final existingIdx = tasks.indexWhere((t) =>
+        t.id == task.id ||
+        (t.title.trim().toLowerCase() == task.title.trim().toLowerCase() &&
+            t.timeMin == task.timeMin &&
+            t.date == task.date &&
+            setEquals(t.weekdays, task.weekdays)));
+    if (existingIdx >= 0) {
+      tasks[existingIdx] = task;
+    } else {
+      tasks.add(task);
+    }
+    NotificationService.scheduleTask(task);
+    _save();
+    notifyListeners();
+  }
+
+  /// Met à jour une tâche existante
+  void updateTask(TaskItem task) {
+    final idx = tasks.indexWhere((t) => t.id == task.id);
+    if (idx >= 0) {
+      tasks[idx] = task;
+      NotificationService.scheduleTask(task);
+      _save();
+      notifyListeners();
+    }
+  }
+
+  /// Supprime une tâche et annule ses notifications
+  void deleteTask(String id) {
+    final idx = tasks.indexWhere((t) => t.id == id);
+    if (idx >= 0) {
+      final task = tasks[idx];
+      NotificationService.cancelTask(task);
+      tasks.removeAt(idx);
+      _save();
+      notifyListeners();
+    }
+  }
+
+  /// Coche ou décoche une tâche pour une date donnée
+  void toggleTaskDone(String id, DateTime date) {
+    final idx = tasks.indexWhere((t) => t.id == id);
+    if (idx >= 0) {
+      final task = tasks[idx];
+      task.toggleDoneForDate(date);
+      _save();
+      notifyListeners();
+    }
+  }
+
+  /// Définit la clé API Gemini
+  void setGeminiApiKey(String key) {
+    geminiApiKey = key.trim();
+    _prefs?.setString(_kGeminiApiKey, geminiApiKey);
+    notifyListeners();
+  }
+
+  /// Vide l'historique de la discussion active
+  void clearChatHistory() {
+    activeChatSession.messages.clear();
+    _save();
+    notifyListeners();
+  }
+
+  // ==========================================
+  // SECTION ASSISTANT IA & ACTIONS
+  // ==========================================
+
+  /// Envoie un prompt à l'assistant IA
+  Future<ChatMessage> askAi(String prompt) async {
+    final session = activeChatSession;
+    if (session.messages.isEmpty ||
+        session.title == 'Discussion générale' ||
+        session.title == 'Nouvelle discussion') {
+      session.title = _summaryFromText(prompt);
+    }
+
+    final userMsg = ChatMessage(
+      id: newId(),
+      sender: 'user',
+      text: prompt.trim(),
+      timestamp: DateTime.now(),
+    );
+    session.messages.add(userMsg);
+    isAiLoading = true;
+    notifyListeners();
+
+    try {
+      final result = await AiService.processUserInput(
+        prompt: prompt,
+        apiKey: geminiApiKey.isNotEmpty ? geminiApiKey : AiConfig.geminiApiKey,
+        currentDate: selectedDate,
+        currentBlocks: blocks,
+        currentTasks: tasks,
+      );
+
+      final assistantMsg = ChatMessage(
+        id: newId(),
+        sender: 'assistant',
+        text: result.text,
+        timestamp: DateTime.now(),
+        actions: result.actions,
+      );
+
+      session.messages.add(assistantMsg);
+      _save();
+      return assistantMsg;
+    } finally {
+      isAiLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Applique toutes les actions fournies en une seule passe optimisée
+  int applyAllAiActions(List<AiAction> actions) {
+    var count = 0;
+    for (final act in actions) {
+      if (!act.isApplied) {
+        final ok = applyAiAction(act);
+        if (ok) count++;
+      }
+    }
+    return count;
+  }
+
+  /// Applique une action générée par l'IA
+  bool applyAiAction(AiAction action) {
+    if (action.isApplied) return false;
+    final payload = action.payload;
+
+    try {
+      switch (action.type) {
+        case 'add_task':
+          final title = payload['title'] as String? ?? 'Nouvelle tâche';
+          final timeMin = payload['timeMin'] as int?;
+          final isDaily = payload['isDaily'] as bool? ?? false;
+          final dateStr = payload['date'] as String?;
+          final weekdaysList = payload['weekdays'] as List?;
+          final weekdays = weekdaysList != null
+              ? Set<int>.from(weekdaysList.map((e) => (e as num).toInt()))
+              : <int>{};
+
+          final task = TaskItem(
+            id: newId(),
+            title: title,
+            timeMin: timeMin,
+            isDaily: isDaily,
+            date: dateStr,
+            weekdays: weekdays,
+          );
+          addTask(task);
+          break;
+
+        case 'add_routine':
+          final title = payload['title'] as String? ?? 'Nouvelle routine';
+          final startMin = payload['startMin'] as int? ?? 480;
+          final endMin = payload['endMin'] as int? ?? 540;
+          final categoryId = payload['category'] as String? ?? 'routine';
+          final weekdaysList = payload['weekdays'] as List?;
+          final weekdays = weekdaysList != null && weekdaysList.isNotEmpty
+              ? Set<int>.from(weekdaysList.map((e) => (e as num).toInt()))
+              : <int>{1, 2, 3, 4, 5, 6, 7};
+          final cat = getCategoryById(categoryId, categories);
+
+          final routine = Routine(
+            id: newId(),
+            title: title,
+            colorValue: cat.defaultColor.value,
+            startMin: startMin,
+            endMin: endMin,
+            weekdays: weekdays,
+            categoryId: categoryId,
+            reminderMin: defaultReminder,
+          );
+          upsertRoutine(routine);
+          break;
+
+        case 'delete_task':
+          final id = payload['id'] as String?;
+          if (id != null) {
+            deleteTask(id);
+          }
+          break;
+
+        case 'toggle_task':
+          final id = payload['id'] as String?;
+          if (id != null) {
+            toggleTaskDone(id, selectedDate);
+          }
+          break;
+
+        case 'add_block':
+          final title = payload['title'] as String? ?? 'Nouveau créneau';
+          final dateStr = payload['date'] as String? ?? dateKey(selectedDate);
+          final startMin = payload['startMin'] as int? ?? 540;
+          final endMin = payload['endMin'] as int? ?? 600;
+          final categoryId = payload['category'] as String? ?? 'focus';
+          final note = payload['note'] as String? ?? '';
+          final category = getCategoryById(categoryId, categories);
+
+          final block = TimeBlock(
+            id: newId(),
+            title: title,
+            note: note,
+            colorValue: category.defaultColor.value,
+            startMin: startMin,
+            endMin: endMin,
+            date: dateStr,
+            categoryId: categoryId,
+            reminderMin: defaultReminder,
+          );
+          upsertBlock(block);
+          break;
+
+        case 'update_block':
+          final id = payload['id'] as String?;
+          if (id != null) {
+            final idx = blocks.indexWhere((b) => b.id == id);
+            if (idx >= 0) {
+              final b = blocks[idx];
+              if (payload['title'] != null) b.title = payload['title'];
+              if (payload['startMin'] != null) b.startMin = payload['startMin'];
+              if (payload['endMin'] != null) b.endMin = payload['endMin'];
+              if (payload['category'] != null) {
+                b.categoryId = payload['category'];
+                b.colorValue = getCategoryById(b.categoryId, categories).defaultColor.value;
+              }
+              upsertBlock(b);
+            }
+          }
+          break;
+
+        case 'delete_block':
+          final id = payload['id'] as String?;
+          if (id != null) {
+            deleteBlock(id);
+          }
+          break;
+
+        case 'resolve_conflicts':
+          final dateStr = payload['date'] as String? ?? dateKey(selectedDate);
+          final parts = dateStr.split('-').map(int.parse).toList();
+          final target = DateTime(parts[0], parts[1], parts[2]);
+          resolveAllConflicts(target);
+          break;
+
+        default:
+          return false;
+      }
+
+      action.isApplied = true;
+      _save();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Erreur lors de l\'application de l\'action IA: $e');
+      return false;
+    }
   }
 }
