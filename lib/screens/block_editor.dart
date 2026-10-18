@@ -104,6 +104,40 @@ class _BlockEditorState extends State<_BlockEditor> {
     }
     HapticFeedback.lightImpact();
     final s = context.read<AppState>();
+    final targetDate = widget.block?.date ?? dateKey(s.selectedDate);
+
+    // Contrôle strict anti-conflit (Option Hybride)
+    var finalStart = _start;
+    var finalEnd = _end;
+    final curConflicts = s.findConflicts(
+      targetDate,
+      finalStart,
+      finalEnd,
+      ignoreBlockId: widget.block?.id,
+    );
+
+    if (curConflicts.isNotEmpty) {
+      // Auto-ajustement garanti au premier créneau libre pour éliminer tout conflit
+      final dur = (finalEnd - finalStart).clamp(15, 24 * 60);
+      final slot = s.findNextAvailableSlot(
+        targetDate,
+        dur,
+        preferredStart: curConflicts.first.endMin,
+        ignoreBlockId: widget.block?.id,
+      );
+      finalStart = slot.$1;
+      finalEnd = slot.$2;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Créneau ajusté à ${fmtMin(finalStart)} – ${fmtMin(finalEnd)} (Zéro Conflit)',
+          ),
+        ),
+      );
+    }
+
     s.upsertBlock(
       TimeBlock(
         id: widget.block?.id ?? s.newId(),
@@ -111,9 +145,9 @@ class _BlockEditorState extends State<_BlockEditor> {
         title: titleText,
         note: _note.text.trim(),
         colorValue: _color,
-        startMin: _start,
-        endMin: _end,
-        date: widget.block?.date ?? dateKey(s.selectedDate),
+        startMin: finalStart,
+        endMin: finalEnd,
+        date: targetDate,
         done: widget.block?.done ?? false,
         routineId: widget.block?.routineId,
         reminderMin: _reminder,
@@ -367,24 +401,54 @@ class _BlockEditorState extends State<_BlockEditor> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      foregroundColor: Colors.amber.shade900,
-                      side: BorderSide(color: Colors.amber.shade700),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      final dur = (_end - _start).clamp(15, 24 * 60);
-                      final newStart = conflicts.first.endMin;
-                      setState(() {
-                        _start = newStart;
-                        _end = (newStart + dur).clamp(0, 24 * 60);
-                      });
-                    },
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 14),
-                    label: Text('Décaler après (${fmtMin(conflicts.first.endMin)})'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: Colors.amber.shade900,
+                          side: BorderSide(color: Colors.amber.shade700),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          final dur = (_end - _start).clamp(15, 24 * 60);
+                          final newStart = conflicts.first.endMin;
+                          setState(() {
+                            _start = newStart;
+                            _end = (newStart + dur).clamp(0, 24 * 60);
+                          });
+                        },
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 14),
+                        label: Text('Décaler après (${fmtMin(conflicts.first.endMin)})'),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: const Color(0xFF6C5CE7),
+                          side: const BorderSide(color: Color(0xFF6C5CE7)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          final dur = (_end - _start).clamp(15, 24 * 60);
+                          final slot = s.findNextAvailableSlot(
+                            targetDate,
+                            dur,
+                            preferredStart: _start,
+                            ignoreBlockId: widget.block?.id,
+                          );
+                          setState(() {
+                            _start = slot.$1;
+                            _end = slot.$2;
+                          });
+                        },
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 14),
+                        label: const Text('1er créneau libre'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -488,12 +552,16 @@ class _BlockEditorState extends State<_BlockEditor> {
               const Spacer(),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
+                  backgroundColor: conflicts.isNotEmpty ? const Color(0xFFE17055) : null,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
                 ),
                 onPressed: _save,
-                icon: const Icon(Icons.check_rounded),
-                label: const Text('Enregistrer', style: TextStyle(fontWeight: FontWeight.w700)),
+                icon: Icon(conflicts.isNotEmpty ? Icons.auto_fix_high_rounded : Icons.check_rounded),
+                label: Text(
+                  conflicts.isNotEmpty ? 'Ajuster & Enregistrer' : 'Enregistrer',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),

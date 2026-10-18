@@ -103,6 +103,7 @@ IMPORTANT - RÈGLES MÉTIER :
    - Utilise l'action "add_routine". Elle est visible dans la section Routines et génère automatiquement des blocs dans le Planning et les Statistiques.
 3. TÂCHE (TaskItem) : action ponctuelle ou rappel avec une heure cible ou sans heure (ex: "Appeler maman à 20h" ou "Payer facture aujourd'hui").
 4. GESTION DES CONFLITS : Si l'utilisateur demande de régler les conflits, propose de décaler les blocs qui se chevauchent ou d'ajuster leur durée.
+5. RÈGLE STRICTE ZÉRO CONFLIT : Deux blocs ou routines créés sur la même journée ne doivent JAMAIS se chevaucher (startMin2 >= endMin1). Si une heure demandée est déjà occupée par un bloc existant, décale-la automatiquement sur le prochain créneau disponible.
 
 BLOCS ACTUELS :
 ${jsonEncode(blocksContext)}

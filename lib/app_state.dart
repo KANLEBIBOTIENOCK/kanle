@@ -649,31 +649,105 @@ class AppState extends ChangeNotifier {
     return false;
   }
 
-  /// Résout automatiquement TOUS les conflits d'une date en décalant en cascade les blocs qui se chevauchent
-  int resolveAllConflicts(DateTime d) {
-    final k = dateKey(d);
-    final dayBlocks = blocks.where((b) => b.date == k).toList()
+  /// Calcule et retourne le premier créneau horaire libre (startMin, endMin) pour une date donnée
+  (int startMin, int endMin) findNextAvailableSlot(
+    String dateStr,
+    int durationMin, {
+    int preferredStart = 0,
+    String? ignoreBlockId,
+  }) {
+    final dur = durationMin.clamp(15, 24 * 60);
+    final dayBlocks = blocks.where((b) {
+      if (b.date != dateStr) return false;
+      if (ignoreBlockId != null && b.id == ignoreBlockId) return false;
+      return true;
+    }).toList()
       ..sort((a, b) => a.startMin.compareTo(b.startMin));
 
-    var resolvedCount = 0;
-    for (var i = 0; i < dayBlocks.length - 1; i++) {
-      final current = dayBlocks[i];
-      final next = dayBlocks[i + 1];
+    // Si aucun bloc n'existe sur la journée, début au créneau préféré
+    if (dayBlocks.isEmpty) {
+      final s = preferredStart.clamp(0, (24 * 60 - dur).clamp(0, 24 * 60));
+      return (s, (s + dur).clamp(0, 24 * 60));
+    }
 
-      if (next.startMin < current.endMin) {
-        final nextDur = (next.endMin - next.startMin).clamp(15, 24 * 60);
-        next.startMin = current.endMin;
-        next.endMin = (next.startMin + nextDur).clamp(0, 24 * 60);
-        NotificationService.schedule(next);
-        resolvedCount++;
+    // 1. Tester directement le créneau préféré
+    final prefEnd = (preferredStart + dur).clamp(0, 24 * 60);
+    final hasConflictAtPref = dayBlocks.any((b) => preferredStart < b.endMin && prefEnd > b.startMin);
+    if (!hasConflictAtPref && prefEnd <= 24 * 60) {
+      return (preferredStart, prefEnd);
+    }
+
+    // 2. Chercher le premier créneau libre >= preferredStart
+    var candidateStart = preferredStart;
+    for (final b in dayBlocks) {
+      if (candidateStart < b.startMin) {
+        if (b.startMin - candidateStart >= dur) {
+          return (candidateStart, candidateStart + dur);
+        }
+      }
+      if (b.endMin > candidateStart) {
+        candidateStart = b.endMin;
       }
     }
 
-    if (resolvedCount > 0) {
+    // 3. Après le dernier bloc
+    if (candidateStart + dur <= 24 * 60) {
+      return (candidateStart, candidateStart + dur);
+    }
+
+    // 4. Fallback : chercher depuis 00:00 s'il y a un créneau plus tôt dans la journée
+    var fallbackStart = 0;
+    for (final b in dayBlocks) {
+      if (b.startMin > fallbackStart && b.startMin - fallbackStart >= dur) {
+        return (fallbackStart, fallbackStart + dur);
+      }
+      if (b.endMin > fallbackStart) {
+        fallbackStart = b.endMin;
+      }
+    }
+
+    // Dernier recours : fin de journée clampée
+    final lastEnd = dayBlocks.last.endMin;
+    final s = (lastEnd + dur <= 24 * 60) ? lastEnd : (24 * 60 - dur).clamp(0, 24 * 60);
+    return (s, (s + dur).clamp(0, 24 * 60));
+  }
+
+  /// Résout automatiquement TOUS les conflits d'une date en décalant en cascade jusqu'à élimination totale des chevauchements
+  int resolveAllConflicts(DateTime d) {
+    final k = dateKey(d);
+    var totalResolved = 0;
+    var iterations = 0;
+
+    // Boucle de convergence pour garantir mathématiquement 0 conflit subsistant
+    while (iterations < 50) {
+      final dayBlocks = blocks.where((b) => b.date == k).toList()
+        ..sort((a, b) => a.startMin.compareTo(b.startMin));
+
+      var changedInThisPass = false;
+      for (var i = 0; i < dayBlocks.length - 1; i++) {
+        final current = dayBlocks[i];
+        final next = dayBlocks[i + 1];
+
+        if (next.startMin < current.endMin) {
+          final nextDur = (next.endMin - next.startMin).clamp(15, 24 * 60);
+          next.startMin = current.endMin;
+          next.endMin = (next.startMin + nextDur).clamp(0, 24 * 60);
+          NotificationService.schedule(next);
+          totalResolved++;
+          changedInThisPass = true;
+          break; // Réordonner pour cascader parfaitement
+        }
+      }
+
+      if (!changedInThisPass) break;
+      iterations++;
+    }
+
+    if (totalResolved > 0) {
       _save();
       notifyListeners();
     }
-    return resolvedCount;
+    return totalResolved;
   }
 
   void upsertBlock(TimeBlock b) {
@@ -764,6 +838,8 @@ class AppState extends ChangeNotifier {
           _applied.add(key);
           NotificationService.schedule(nb);
         }
+        // Garantie Zéro-Conflit : résoudre immédiatement tout conflit avec le planning du jour
+        resolveAllConflicts(day);
       } else {
         // Ce jour a été décoché dans la routine : retirer les blocs non terminés
         blocks.removeWhere((b) {
@@ -1202,6 +1278,9 @@ class AppState extends ChangeNotifier {
             routineId: routineId,
           );
           upsertBlock(block);
+          final parts = dateStr.split('-').map(int.parse).toList();
+          final target = DateTime(parts[0], parts[1], parts[2]);
+          resolveAllConflicts(target);
           break;
 
         case 'update_block':
@@ -1218,6 +1297,9 @@ class AppState extends ChangeNotifier {
                 b.colorValue = getCategoryById(b.categoryId, categories).defaultColor.value;
               }
               upsertBlock(b);
+              final parts = b.date.split('-').map(int.parse).toList();
+              final target = DateTime(parts[0], parts[1], parts[2]);
+              resolveAllConflicts(target);
             }
           }
           break;
