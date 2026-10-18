@@ -18,13 +18,95 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final _scrollController = ScrollController();
   bool _isComposing = false;
 
-  final List<String> _quickPrompts = [
-    'Rappelle-moi d\'appeler maman tous les jours à 20h',
-    'Prendre mes vitamines aujourd\'hui à 21h',
-    'Résous les conflits d\'horaires d\'aujourd\'hui',
-    'Planifie un bloc Focus de 14h à 16h',
-    'Supprime le créneau en conflit',
+  int _suggestionOffset = 0;
+
+  static const Map<int, List<String>> _weekdaySuggestions = {
+    DateTime.monday: [
+      'Planifie mes blocs de travail pour aujourd\'hui dès 9h',
+      'Créer une routine sport chaque matin de 7h à 7h45',
+      'Résous tous les conflits d\'horaires d\'aujourd\'hui',
+      'Rappelle-moi de faire le point de début de semaine à 11h',
+      'Créer un bloc Focus de 14h à 16h30',
+    ],
+    DateTime.tuesday: [
+      'Planifie un bloc étude et lecture de 20h à 21h30',
+      'Créer des blocs "manger" chaque jour de 11h à 11h40',
+      'Ajoute un bloc sport de 18h à 19h15 aujourd\'hui',
+      'Vérifie et résous les chevauchements de mon planning',
+      'Rappelle-moi de prendre mes vitamines ce soir à 21h',
+    ],
+    DateTime.wednesday: [
+      'Créer un bloc pause & détente de 13h à 14h',
+      'Planifie ma routine révision pour cet après-midi',
+      'Créer un bloc travail projet de 10h à 12h30',
+      'Rappelle-moi d\'appeler la famille à 19h30',
+      'Résous les conflits d\'horaires de cette journée',
+    ],
+    DateTime.thursday: [
+      'Optimise mes créneaux pour avancer sur mes priorités',
+      'Créer une routine prière & méditation chaque matin à 6h30',
+      'Planifie un bloc sport intensif de 18h à 19h',
+      'Ajoute un bloc Focus de 14h à 16h',
+      'Rappelle-moi de finaliser mes tâches urgentes à 17h',
+    ],
+    DateTime.friday: [
+      'Planifie mon créneau bilan de fin de semaine de 16h à 17h',
+      'Créer une routine lecture tous les soirs de 21h à 22h',
+      'Résous les conflits de planning avant le week-end',
+      'Créer un bloc détente & social ce soir à 19h30',
+      'Rappelle-moi de préparer mes objectifs à 18h',
+    ],
+    DateTime.saturday: [
+      'Planifie une séance sport et santé de 9h à 10h30',
+      'Créer un bloc famille & détente cet après-midi de 14h à 17h',
+      'Créer des blocs "repas" chaque jour de 12h30 à 13h30',
+      'Rappelle-moi d\'appeler mes proches aujourd\'hui à 19h',
+      'Planifie un temps de repos de 13h30 à 15h',
+    ],
+    DateTime.sunday: [
+      'Organise mes routines pour la semaine à venir',
+      'Planifie ma journée de lundi matin dès 8h30',
+      'Créer un bloc lecture & méditation de 20h à 21h30',
+      'Vérifie mes disponibilités et résous les conflits',
+      'Rappelle-moi de préparer mes affaires ce soir à 21h',
+    ],
+  };
+
+  static const List<String> _bonusSuggestions = [
+    'Créer des blocs "manger" chaque jour de 11h à 11h40',
+    'Planifie un bloc Focus Deep Work de 9h à 11h30',
+    'Créer une routine marche rapide du lundi au vendredi à 18h',
+    'Résous les chevauchements dans mon agenda',
+    'Rappelle-moi de boire de l\'eau toutes les 2 heures',
+    'Ajoute un créneau de repos de 13h à 13h45 aujourd\'hui',
   ];
+
+  String get _currentDayName {
+    final now = DateTime.now();
+    return const [
+      '',
+      'Lundi',
+      'Mardi',
+      'Mercredi',
+      'Jeudi',
+      'Vendredi',
+      'Samedi',
+      'Dimanche'
+    ][now.weekday];
+  }
+
+  List<String> get _quickPrompts {
+    final weekday = DateTime.now().weekday;
+    final base = _weekdaySuggestions[weekday] ?? _weekdaySuggestions[DateTime.monday]!;
+    if (_suggestionOffset == 0) return base;
+    final all = [...base, ..._bonusSuggestions];
+    final start = (_suggestionOffset * 2) % all.length;
+    final res = <String>[];
+    for (var i = 0; i < 5; i++) {
+      res.add(all[(start + i) % all.length]);
+    }
+    return res;
+  }
 
   @override
   void dispose() {
@@ -377,24 +459,46 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     ),
             ),
 
-            // Suggestions de commandes rapides si l'historique a du contenu
+            // Suggestions de commandes rapides renouvelées chaque jour
             if (state.chatHistory.isNotEmpty)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Row(
-                  children: _quickPrompts.map((p) {
-                    return Padding(
+                  children: [
+                    Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
-                        label: Text(p, style: const TextStyle(fontSize: 11)),
-                        avatar: const Icon(Icons.bolt_rounded, size: 14, color: Color(0xFF6C5CE7)),
-                        backgroundColor: isDark ? const Color(0xFF1E1E2C) : Colors.white,
-                        side: BorderSide(color: Colors.grey.withOpacity(0.2)),
-                        onPressed: () => _handleSend(p),
+                        label: Text('Idées $_currentDayName',
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.bold)),
+                        avatar: const Icon(Icons.refresh_rounded,
+                            size: 14, color: Color(0xFF6C5CE7)),
+                        backgroundColor:
+                            isDark ? const Color(0xFF1E1E2C) : const Color(0xFFF1EEFD),
+                        side: BorderSide(
+                            color: const Color(0xFF6C5CE7).withOpacity(0.3)),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _suggestionOffset++);
+                        },
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    ..._quickPrompts.map((p) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          label: Text(p, style: const TextStyle(fontSize: 11)),
+                          avatar: const Icon(Icons.bolt_rounded,
+                              size: 14, color: Color(0xFF6C5CE7)),
+                          backgroundColor:
+                              isDark ? const Color(0xFF1E1E2C) : Colors.white,
+                          side: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                          onPressed: () => _handleSend(p),
+                        ),
+                      );
+                    }),
+                  ],
                 ),
               ),
 
@@ -438,13 +542,46 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Suggestions rapides :',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
-              ),
+            // En-tête des suggestions avec le jour actuel et bouton pour renouveler
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_rounded, size: 15, color: Color(0xFF6C5CE7)),
+                const SizedBox(width: 6),
+                Text(
+                  'Suggestions du $_currentDayName :',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                  ),
+                ),
+                const Spacer(),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _suggestionOffset++);
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF6C5CE7)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Renouveler',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF6C5CE7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             Column(
