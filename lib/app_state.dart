@@ -1164,6 +1164,30 @@ class AppState extends ChangeNotifier {
           final categoryId = payload['category'] as String? ?? 'focus';
           final note = payload['note'] as String? ?? '';
           final category = getCategoryById(categoryId, categories);
+          final isRoutine = payload['isRoutine'] as bool? ??
+              (categoryId == 'routine' ||
+                  title.toLowerCase().contains('routine') ||
+                  title.toLowerCase().contains('habitude'));
+
+          String? routineId;
+
+          // Si le bloc est une routine ou une habitude, créer également la Routine dans s.routines
+          if (isRoutine) {
+            final routine = Routine(
+              id: newId(),
+              title: title,
+              colorValue: category.defaultColor.value,
+              startMin: startMin,
+              endMin: endMin,
+              weekdays: payload['weekdays'] != null
+                  ? Set<int>.from((payload['weekdays'] as List).map((e) => (e as num).toInt()))
+                  : {1, 2, 3, 4, 5, 6, 7},
+              categoryId: categoryId,
+              reminderMin: defaultReminder,
+            );
+            upsertRoutine(routine);
+            routineId = routine.id;
+          }
 
           final block = TimeBlock(
             id: newId(),
@@ -1175,6 +1199,7 @@ class AppState extends ChangeNotifier {
             date: dateStr,
             categoryId: categoryId,
             reminderMin: defaultReminder,
+            routineId: routineId,
           );
           upsertBlock(block);
           break;

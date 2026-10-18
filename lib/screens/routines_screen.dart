@@ -133,13 +133,115 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
 
           // Liste des routines
           Expanded(
-            child: s.routines.isEmpty
-                ? _buildEmptyState(theme, 'Aucune routine configurée')
-                : (_selectedDay == 0
+            child: Builder(
+              builder: (ctx) {
+                final planningHabitBlocks = s.blocks
+                    .where((b) => b.categoryId == 'routine' && b.routineId == null)
+                    .toList();
+
+                if (s.routines.isEmpty && planningHabitBlocks.isEmpty) {
+                  return _buildEmptyState(theme, 'Aucune routine configurée');
+                }
+
+                if (s.routines.isEmpty) {
+                  return _buildPlanningHabitsOnlyView(context, s, theme, planningHabitBlocks);
+                }
+
+                return _selectedDay == 0
                     ? _buildGroupedWeekView(context, s, theme)
-                    : _buildSingleDayView(context, s, theme, _selectedDay)),
+                    : _buildSingleDayView(context, s, theme, _selectedDay);
+              },
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _convertBlockToRoutine(BuildContext context, TimeBlock b, AppState s) {
+    final r = Routine(
+      id: s.newId(),
+      title: b.title,
+      colorValue: b.colorValue,
+      startMin: b.startMin,
+      endMin: b.endMin,
+      weekdays: {1, 2, 3, 4, 5, 6, 7},
+      categoryId: b.categoryId,
+      reminderMin: b.reminderMin,
+    );
+    b.routineId = r.id;
+    s.upsertRoutine(r);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✓ "${b.title}" enregistrée comme routine récurrente !'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF00B894),
+      ),
+    );
+  }
+
+  Widget _buildPlanningHabitsOnlyView(
+      BuildContext context, AppState s, ThemeData theme, List<TimeBlock> habitBlocks) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE17055).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE17055).withOpacity(0.3)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: Color(0xFFE17055), size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Habitudes créées par l\'IA dans votre planning. Vous pouvez les transformer en routines récurrentes :',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (final b in habitBlocks)
+          _buildHabitBlockCard(context, b, s, theme),
+      ],
+    );
+  }
+
+  Widget _buildHabitBlockCard(BuildContext context, TimeBlock b, AppState s, ThemeData theme) {
+    final cat = getCategoryById(b.categoryId, s.categories);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: b.color.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(cat.icon, color: b.color, size: 20),
+        ),
+        title: Text(b.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        subtitle: Text(
+          '${fmtMin(b.startMin)} – ${fmtMin(b.endMin)} · Date : ${b.date}',
+          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+        ),
+        trailing: FilledButton.tonalIcon(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: const Icon(Icons.repeat_rounded, size: 16),
+          label: const Text('Répéter', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          onPressed: () => _convertBlockToRoutine(context, b, s),
+        ),
       ),
     );
   }
@@ -152,7 +254,11 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
       }
     }
 
-    if (daysWithRoutines.isEmpty) {
+    final unlinkedHabitBlocks = s.blocks
+        .where((b) => b.categoryId == 'routine' && b.routineId == null)
+        .toList();
+
+    if (daysWithRoutines.isEmpty && unlinkedHabitBlocks.isEmpty) {
       return _buildEmptyState(theme, 'Aucune routine configurée');
     }
 
@@ -194,6 +300,19 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
           for (final r in (s.routines.where((r) => r.weekdays.contains(d)).toList()
             ..sort((a, b) => a.startMin.compareTo(b.startMin))))
             _buildRoutineCard(context, r, theme, highlightDay: d),
+        ],
+
+        if (unlinkedHabitBlocks.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Text(
+              'Habitudes dans l\'agenda (créées par l\'IA)',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ),
+          for (final b in unlinkedHabitBlocks)
+            _buildHabitBlockCard(context, b, s, theme),
         ],
       ],
     );

@@ -438,23 +438,29 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
 
       // Déduction de la catégorie
       var cat = 'work';
+      if (lower.contains('routine') || lower.contains('habitude') || lower.contains('vie') || lower.contains('quotidien')) cat = 'routine';
       if (lower.contains('sport') || lower.contains('gym') || lower.contains('courir')) cat = 'sport';
       if (lower.contains('prière') || lower.contains('priere') || lower.contains('méditer')) cat = 'prayer';
       if (lower.contains('étude') || lower.contains('etude') || lower.contains('lire')) cat = 'study';
       if (lower.contains('repos') || lower.contains('pause') || lower.contains('sieste')) cat = 'rest';
 
       final dateTarget = lower.contains('demain') ? tomorrowStr : todayStr;
+      final isRoutineFlag = cat == 'routine' || lower.contains('routine') || lower.contains('habitude');
 
       actions.add(AiAction(
         id: _uuid.v4(),
-        type: 'add_block',
-        description: 'Planifier le bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} le $dateTarget',
+        type: isRoutineFlag ? 'add_routine' : 'add_block',
+        description: isRoutineFlag
+            ? 'Créer la routine/habitude "$title" (${fmtMin(startMin)} - ${fmtMin(endMin)})'
+            : 'Planifier le bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} le $dateTarget',
         payload: {
           'title': title,
           'date': dateTarget,
           'startMin': startMin,
           'endMin': endMin,
           'category': cat,
+          'isRoutine': isRoutineFlag,
+          'weekdays': [1, 2, 3, 4, 5, 6, 7],
         },
       ));
 
