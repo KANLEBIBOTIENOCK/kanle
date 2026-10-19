@@ -15,8 +15,15 @@ class AiConfig {
     }
   }
 
-  /// Modèle Gemini recommandé (supporte v1beta et v1)
-  static const String geminiModel = 'gemini-flash-latest';
+  /// Modèle Gemini haute vitesse optimisé pour les réponses JSON structurées instantanées
+  static const String geminiModel = 'gemini-3.5-flash-lite';
+
+  /// Modèles de secours en cas de pic de charge (503 / 429) sur le modèle principal
+  static const List<String> fallbackModels = [
+    'gemini-flash-lite-latest',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+  ];
 
   /// Indique si une clé a été renseignée
   static bool get hasKey => geminiApiKey.trim().isNotEmpty;

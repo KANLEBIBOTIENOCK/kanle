@@ -65,98 +65,54 @@ class AiService {
     final now = DateTime.now();
     final todayKey = dateKey(currentDate);
 
-    // Contexte synthétique des blocs actuels
-    final blocksContext = currentBlocks.map((b) => {
-          'id': b.id,
+    // Contexte synthétique et allégé (pour minimiser la latence réseau et le traitement des tokens)
+    final relevantBlocks = currentBlocks.where((b) => b.date == todayKey).take(30);
+    final blocksContext = relevantBlocks.map((b) => {
           'title': b.title,
-          'date': b.date,
-          'startMin': b.startMin,
           'start': fmtMin(b.startMin),
-          'endMin': b.endMin,
           'end': fmtMin(b.endMin),
-          'category': b.categoryId,
+          'cat': b.categoryId,
         }).toList();
 
-    // Contexte synthétique des tâches actuelles
-    final tasksContext = currentTasks.map((t) => {
-          'id': t.id,
+    final tasksContext = currentTasks.take(25).map((t) => {
           'title': t.title,
-          'time': t.timeMin != null ? fmtMin(t.timeMin!) : 'sans heure',
-          'isDaily': t.isDaily,
-          'date': t.date,
-          'weekdays': t.weekdays.toList(),
-          'done': t.isDoneForDate(currentDate),
+          'time': t.timeMin != null ? fmtMin(t.timeMin!) : null,
+          'daily': t.isDaily,
         }).toList();
+
+    final blocksSnippet = blocksContext.isNotEmpty
+        ? '\nBLOCS ACTUELS : ${jsonEncode(blocksContext)}'
+        : '';
+    final tasksSnippet = tasksContext.isNotEmpty
+        ? '\nTÂCHES ACTUELLES : ${jsonEncode(tasksContext)}'
+        : '';
 
     final systemInstruction = '''
-Tu es l'assistant IA autonome et exclusif de l'application mobile Kanlé (Time-blocking, Gestion de routines et d'habitudes, Tâches et Productivité).
-Tu es bienveillant, dynamique, méthodique, très précis et tu as une maîtrise parfaite du temps.
-Date actuelle : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour affiché dans l'app : $todayKey).
-Heure actuelle : ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}.
+Tu es l'assistant IA autonome et ultra-rapide de l'application mobile Kanlé (Time-blocking, Routines, Tâches).
+Date actuelle : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour affiché : $todayKey).
+Heure actuelle : ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}.$blocksSnippet$tasksSnippet
 
-=======================================================
-LES CAPACITÉS RÉELLES DE L'APPLICATION (ACTIONS POSSIBLES)
-=======================================================
-Tu peux exécuter les actions suivantes dans le tableau "actions" :
+ACTIONS POSSIBLES :
+1. "add_routine": Créer une habitude récurrente (payload: "title", "startMin", "endMin", "category", "weekdays").
+   Catégories valides: "prayer", "study", "routine", "work", "sport", "focus", "rest", "social".
+   weekdays: [1..7] (1=Lundi, 7=Dimanche).
+2. "add_block": Créer un créneau ponctuel (payload: "title", "date" [YYYY-MM-DD], "startMin", "endMin", "category", "note").
+3. "add_task": Créer une tâche ou rappel (payload: "title", "timeMin", "isDaily", "weekdays", "date").
+4. "resolve_conflicts": Résoudre les chevauchements (payload: "date" [YYYY-MM-DD]).
 
-1. "add_routine" : CRÉER UNE ROUTINE RÉCURRENTE
-   - Pour les habitudes quotidiennes, matinales, du soir, ou récurrentes certains jours de la semaine.
-   - Les routines créées apparaissent dans l'écran Routines et sont automatiquement synchronisées sur le Planning.
-   - Champs de payload :
-     * "title": Titre court, propre et soigné (ex: "Laver le visage", "Bible audio", "Prière Aline", "Marche")
-     * "startMin": Minute de début depuis minuit (ex: 05h10 = 5*60 + 10 = 310)
-     * "endMin": Minute de fin (ex: 05h12 = 312, 06h00 = 360). STRICTEMENT supérieur à startMin.
-     * "category": Une catégorie parmi: "prayer" (prière, foi, bible, psaume), "study" (étude, révision, lecture, exercice), "routine" (toilette, habillage, rangement, ménage, repas), "work" (projet, biblio, objectifs), "sport" (marche, course, fitness), "focus" (priorité haute), "rest" (détente, musique, repos), "social" (famille, amis).
-     * "weekdays": Tableau des entiers des jours de la semaine (1 = Lundi, 2 = Mardi, 3 = Mercredi, 4 = Jeudi, 5 = Vendredi, 6 = Samedi, 7 = Dimanche). Si tous les jours: [1,2,3,4,5,6,7]. Si du lundi au vendredi: [1,2,3,4,5]. Si un seul jour (ex: Lundi): [1].
+RÈGLE ABSOLUE - DÉCOMPOSITION SYSTÉMATIQUE (BATCH PARSING) :
+Si l'utilisateur transmet une liste de plusieurs créneaux ou routines :
+- Ne JAMAIS fusionner ni tronquer.
+- Génère AUTANT d'actions DISTINCTES dans "actions" qu'il y a d'activités individuelles.
+- Chaque action doit avoir son propre titre précis, ses startMin et endMin propres, et ses bons weekdays.
 
-2. "add_block" : PLANIFIER UN BLOC DE TEMPS PONCTUEL (TimeBlock)
-   - Pour un créneau spécifique sur un jour précis (ex: "Demain de 14h à 16h réunion", "Aujourd'hui 20h séance code").
-   - Champs de payload :
-     * "title": Titre du créneau
-     * "date": Date au format "YYYY-MM-DD"
-     * "startMin": Minute de début (ex: 840 pour 14:00)
-     * "endMin": Minute de fin (ex: 960 pour 16:00)
-     * "category": Une des catégories valides ("work", "study", "sport", "focus", "rest", "routine", "prayer", "social")
-     * "note": Note optionnelle
-
-3. "add_task" : PROGRAMMER UN RAPPEL OU UNE TÂCHE (TaskItem)
-   - Pour les actions ou rappels sans plage de début-fin continue (ex: "Appeler maman à 18h", "Prendre vitamines à 08h", "Laver habit à 19h").
-   - Champs de payload :
-     * "title": Intitulé propre (ex: "Appeler Papa", "Appeler Aline")
-     * "timeMin": Minute cible dans la journée (ex: 7h25 = 445, 18h00 = 1080, 20h00 = 1200)
-     * "isDaily": true si c'est chaque jour, false sinon
-     * "weekdays": Tableau des jours si récurrent certains jours (ex: [1, 3, 5, 7] pour lun, mer, ven, dim)
-     * "date": "YYYY-MM-DD" si c'est une tâche ponctuelle à un jour donné
-
-4. "delete_block" / "delete_task" / "update_block" / "update_task" / "toggle_task"
-   - Champs : "id": ID de l'élément cible
-
-5. "resolve_conflicts" : RÉSOUDRE LES CONFLITS D'HORAIRES
-   - "date": "YYYY-MM-DD"
-
-=======================================================
-RÈGLE CRITIQUE ABSOLUE : DÉCOMPOSITION SYSTÉMATIQUE (BATCH PARSING)
-=======================================================
-Quand l'utilisateur te colle ou te dicte un emploi du temps, une liste de journée, une routine complète ou plusieurs activités (ex: 10 créneaux avec heures, ou une liste d'appels à faire) :
-- TU NE DOIS JAMAIS, SOUS AUCUN PRÉTEXTE, fusionner ou concaténer plusieurs activités dans un seul titre ou une seule action !
-- Tu DOIS IMPÉRATIVEMENT générer AUTANT D'ACTIONS DISTINCTES dans le tableau "actions" qu'il y a d'activités individuelles !
-- Exemple : Si l'utilisateur donne 15 créneaux et 5 rappels d'appels, ton tableau "actions" DOIT contenir exactement 20 objets distincts.
-- Chaque objet doit avoir son propre titre propre, ses propres minutes calculées de début et de fin, ses bons jours `weekdays`, et sa catégorie appropriée.
-- Zéro conflit : Assure-toi que les heures début/fin de créneaux successifs ne se chevauchent pas de manière incohérente (ex: 05h10-05h12 puis 05h14-05h24).
-
-BLOCS ACTUELS DE L'UTILISATEUR :
-${jsonEncode(blocksContext)}
-
-TÂCHES ACTUELLES DE L'UTILISATEUR :
-${jsonEncode(tasksContext)}
-
-FORMAT DE SORTIE OBLIGATOIRE (STRICTEMENT EN JSON SANS TEXTE AVANT OU APRÈS) :
+FORMAT DE SORTIE STRICT EN JSON :
 {
-  "response": "Explication claire, chaleureuse et structurée en français récapitulant exactement tout ce qui a été découpé et préparé pour l'utilisateur.",
+  "response": "Court résumé chaleureux et clair en français.",
   "actions": [
     {
-      "type": "add_routine", // ou "add_block", "add_task", etc.
-      "description": "Description humaine concise (ex: Créer la routine : Laver le visage (05:10 - 05:12, Lun))",
+      "type": "add_routine",
+      "description": "Créer la routine : Laver le visage (05:10 - 05:12, Lun)",
       "payload": {
         "title": "Laver le visage",
         "startMin": 310,
@@ -169,58 +125,75 @@ FORMAT DE SORTIE OBLIGATOIRE (STRICTEMENT EN JSON SANS TEXTE AVANT OU APRÈS) :
 }
 ''';
 
-    String? rawText;
-
-    // 1. Tenter l'appel REST direct avec header X-goog-api-key (rapide, sans wrapper)
-    try {
-      final url = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/${AiConfig.geminiModel}:generateContent');
-      final reqBody = jsonEncode({
-        'systemInstruction': {
+    final reqBody = jsonEncode({
+      'systemInstruction': {
+        'parts': [
+          {'text': systemInstruction}
+        ]
+      },
+      'contents': [
+        {
+          'role': 'user',
           'parts': [
-            {'text': systemInstruction}
+            {'text': prompt}
           ]
-        },
-        'contents': [
-          {
-            'role': 'user',
-            'parts': [
-              {'text': prompt}
-            ]
-          }
-        ],
-        'generationConfig': {
-          'responseMimeType': 'application/json',
-          'temperature': 0.1,
-        },
-      });
-
-      final resp = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey,
-        },
-        body: reqBody,
-      );
-
-      if (resp.statusCode == 200) {
-        final decoded = jsonDecode(resp.body);
-        final candidates = decoded['candidates'] as List?;
-        if (candidates != null && candidates.isNotEmpty) {
-          final parts = candidates[0]['content']?['parts'] as List?;
-          if (parts != null && parts.isNotEmpty) {
-            rawText = parts[0]['text'] as String?;
-          }
         }
-      } else {
-        debugPrint('REST Gemini a répondu avec code ${resp.statusCode}: ${resp.body}');
+      ],
+      'generationConfig': {
+        'responseMimeType': 'application/json',
+        'temperature': 0.1,
+      },
+    });
+
+    String? rawText;
+    final client = http.Client();
+    final modelsToTry = [
+      AiConfig.geminiModel,
+      ...AiConfig.fallbackModels,
+    ];
+
+    // 1. Tenter les modèles REST optimisés en cascade avec timeout de 10s par tentative
+    try {
+      for (final modelName in modelsToTry) {
+        try {
+          final url = Uri.parse(
+              'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent');
+          final resp = await client
+              .post(
+                url,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-goog-api-key': apiKey,
+                },
+                body: reqBody,
+              )
+              .timeout(const Duration(seconds: 10));
+
+          if (resp.statusCode == 200) {
+            final decoded = jsonDecode(resp.body);
+            final candidates = decoded['candidates'] as List?;
+            if (candidates != null && candidates.isNotEmpty) {
+              final parts = candidates[0]['content']?['parts'] as List?;
+              if (parts != null && parts.isNotEmpty) {
+                rawText = parts[0]['text'] as String?;
+                if (rawText != null && rawText.isNotEmpty) {
+                  debugPrint('IA Gemini: Réponse reçue avec succès via [$modelName]');
+                  break;
+                }
+              }
+            }
+          } else {
+            debugPrint('Modèle [$modelName] indisponible (code ${resp.statusCode}), basculement...');
+          }
+        } catch (e) {
+          debugPrint('Modèle [$modelName] en timeout ou erreur ($e), basculement...');
+        }
       }
-    } catch (e) {
-      debugPrint('Tentative REST échouée ($e), tentative via le SDK official google_generative_ai...');
+    } finally {
+      client.close();
     }
 
-    // 2. Si le REST n'a pas répondu, tenter le SDK officiel google_generative_ai
+    // 2. Dernier recours : SDK officiel si tous les appels directs REST ont échoué
     if (rawText == null || rawText.isEmpty) {
       final model = GenerativeModel(
         model: AiConfig.geminiModel,
@@ -231,7 +204,9 @@ FORMAT DE SORTIE OBLIGATOIRE (STRICTEMENT EN JSON SANS TEXTE AVANT OU APRÈS) :
         ),
         systemInstruction: Content.system(systemInstruction),
       );
-      final response = await model.generateContent([Content.text(prompt)]);
+      final response = await model
+          .generateContent([Content.text(prompt)])
+          .timeout(const Duration(seconds: 12));
       rawText = response.text;
     }
 

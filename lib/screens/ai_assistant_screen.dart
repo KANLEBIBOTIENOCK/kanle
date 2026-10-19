@@ -944,17 +944,31 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E1E2C) : Colors.white,
               borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF6C5CE7)),
                 ),
-                SizedBox(width: 10),
-                Text('L\'IA réfléchit...', style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
+                const SizedBox(width: 10),
+                Text(
+                  'Organisation de vos blocs...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white70 : const Color(0xFF4A4B65),
+                  ),
+                ),
               ],
             ),
           ),

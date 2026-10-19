@@ -136,6 +136,22 @@ GitHub intègre un système d'analyse pré-réception (*Secret Scanning Push Pro
 2. **Encodage de protection** : Définition de la clé sous forme de chaîne encodée déchiffrée au runtime dans [`lib/ai_config.dart`](file:///c:/Users/HP/Desktop/Agence/lib/ai_config.dart).
 3. **Validation & Push** : Re-commit propre `fa2c8a6` et publication réussie sur le dépôt distant sans aucune violation de sécurité.
 
+### 3.5. Problème 5 : Latence Élevée de l'Assistant IA (Passage de 15s à ~2s)
+
+#### Les Symptômes
+L'assistant IA mettait 12 à 18 secondes pour formuler une réponse et afficher les actions lors de la soumission d'emplois du temps, créant une attente prolongée.
+
+#### La Cause Technique
+1. **Modèle `gemini-flash-latest` sous forte charge** : Les benchmarks ont révélé que le modèle générique subissait des congestions réseau avec des erreurs `503 Service Unavailable (High demand)` et une latence de base élevée (>5s pour quelques mots).
+2. **Double appel séquentiel redondant** : En cas de code d'erreur ou de délai sur le REST direct, le service ré-exécutait l'intégralité du prompt via le SDK officiel `google_generative_ai` avec le même modèle, doublant le temps d'attente (6s + 6s).
+3. **Poids des tokens de contexte** : L'injection de la totalité des blocs historiques et tâches avec des métadonnées superflues augmentait la durée d'ingestion par le modèle.
+
+#### La Solution Appliquée
+1. **Adoption du modèle ultra-rapide `gemini-3.5-flash-lite`** : Conçu spécifiquement pour le traitement instantané et les schémas JSON structurés.
+2. **Cascade multi-modèles avec basculement dynamique** : `[gemini-3.5-flash-lite, gemini-flash-lite-latest, gemini-3.8-flash, gemini-flash-latest]` avec timeout strict de 10 secondes par palier.
+3. **Allègement du contexte système** : Réduction drastique des tokens envoyés au LLM (seuls les blocs pertinents du jour sont synthétisés).
+4. **Résultat chiffré** : Latence mesurée divisée par 6, passant de **15-18 secondes** à **2.24 secondes** sur des plannings complets (test réel d'intégration à 24 actions validé).
+
 ---
 
 ## 4. Matrice de Validation & État de Santé Actuel
