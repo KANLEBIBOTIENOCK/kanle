@@ -32,11 +32,38 @@ class NotificationService {
     tzdata.initializeTimeZones();
     try {
       final info = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(info.identifier));
-      debugPrint('Timezone local initialisé sur: ${info.identifier}');
+      final id = info.identifier.trim();
+      tz.Location? resolvedLoc;
+
+      try {
+        resolvedLoc = tz.getLocation(id);
+      } catch (_) {
+        debugPrint('Identifiant timezone brut "$id" non reconnu directement.');
+      }
+
+      if (resolvedLoc == null) {
+        final currentOffset = DateTime.now().timeZoneOffset;
+        for (final loc in tz.timeZoneDatabase.locations.values) {
+          if (loc.currentTimeZone.offset == currentOffset) {
+            resolvedLoc = loc;
+            break;
+          }
+        }
+      }
+
+      tz.setLocalLocation(resolvedLoc ?? tz.UTC);
+      debugPrint('Timezone local validé sur: ${tz.local.name} (offset: ${DateTime.now().timeZoneOffset.inHours}h)');
     } catch (e) {
-      debugPrint('Erreur init timezone: $e, fallback sur UTC');
-      tz.setLocalLocation(tz.UTC);
+      debugPrint('Erreur init timezone ($e), calage par offset...');
+      final currentOffset = DateTime.now().timeZoneOffset;
+      tz.Location? fallbackLoc;
+      for (final loc in tz.timeZoneDatabase.locations.values) {
+        if (loc.currentTimeZone.offset == currentOffset) {
+          fallbackLoc = loc;
+          break;
+        }
+      }
+      tz.setLocalLocation(fallbackLoc ?? tz.UTC);
     }
 
     const initSettings = InitializationSettings(

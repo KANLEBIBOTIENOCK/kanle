@@ -391,6 +391,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _showBackgroundGuideDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined, color: Color(0xFF6C5CE7)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Alarmes Écran Éteint',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Certains fabricants bloquent les alarmes d\'arrière-plan pour économiser la batterie. Suivez ces réglages simples :',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '📱 Tecno / Infinix (HiOS / XOS) :',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF6C5CE7)),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '1. Ouvrez l\'application "Phone Master" > Boîte à outils > Gestion du démarrage automatique > Activez Kanlé.\n'
+                '2. Dans Paramètres > Batterie (Battery Lab) > Désactivez le blocage de notifications écran éteint.',
+                style: TextStyle(fontSize: 12, height: 1.4),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '📱 Xiaomi / Redmi (MIUI / HyperOS) :',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF6C5CE7)),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '1. Paramètres > Applications > Gérer les applications > Kanlé > Activez "Démarrage automatique".\n'
+                '2. Économiseur de batterie > Choisissez "Pas de restrictions".',
+                style: TextStyle(fontSize: 12, height: 1.4),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '📱 Samsung / Autres Android :',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF6C5CE7)),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Paramètres > Applications > Kanlé > Batterie > Sélectionnez "Non restreinte".',
+                style: TextStyle(fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Compris'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -489,6 +560,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       }
                     },
                   ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.battery_alert_rounded, color: Color(0xFFE17055)),
+                  title: const Text('Guide Veille & Arrière-plan', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: const Text('Conseils essentiels pour Tecno, Infinix, Xiaomi et Samsung', style: TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _showBackgroundGuideDialog(context),
                 ),
               ],
             ),
