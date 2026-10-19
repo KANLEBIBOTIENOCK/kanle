@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../ai_config.dart';
 import '../app_state.dart';
 import '../models.dart';
 
@@ -322,7 +321,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final state = context.watch<AppState>();
-    final isConfigured = AiConfig.hasKey || state.geminiApiKey.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -421,16 +419,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isConfigured ? const Color(0xFF00B894) : const Color(0xFFE2B93B),
+                      color: Color(0xFF00B894),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isConfigured
-                        ? 'Google Gemini connecté (Clé intégrée)'
-                        : 'Moteur intelligent actif (Organisateur autonome)',
+                    'IA Autonome active (Google Gemini)',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,

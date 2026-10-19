@@ -9,14 +9,20 @@ class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _ready = false;
 
+  static const String _kChannelId = 'kanle_alarms_v5';
+  static const String _kChannelName = 'Alarmes & Rappels Kanlé';
+  static const String _kChannelDesc =
+      'Alarmes prioritaires pour vos blocs de temps et routines (Mode Réveil Android)';
+
   static const _androidDetails = AndroidNotificationDetails(
-    'kanle_reminders_v4',
-    'Rappels Kanlé',
-    channelDescription: 'Alarmes et rappels de vos blocs de temps',
+    _kChannelId,
+    _kChannelName,
+    channelDescription: _kChannelDesc,
     importance: Importance.max,
-    priority: Priority.high,
+    priority: Priority.max,
     visibility: NotificationVisibility.public,
-    category: AndroidNotificationCategory.reminder,
+    category: AndroidNotificationCategory.alarm,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
     playSound: true,
     enableVibration: true,
     fullScreenIntent: true,
@@ -30,6 +36,7 @@ class NotificationService {
       debugPrint('Timezone local initialisé sur: ${info.identifier}');
     } catch (e) {
       debugPrint('Erreur init timezone: $e, fallback sur UTC');
+      tz.setLocalLocation(tz.UTC);
     }
 
     const initSettings = InitializationSettings(
@@ -45,6 +52,20 @@ class NotificationService {
 
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+
+    // Création explicite du canal Android avec priorité MAX et usage Réveil (Alarm)
+    const channel = AndroidNotificationChannel(
+      _kChannelId,
+      _kChannelName,
+      description: _kChannelDesc,
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      showBadge: true,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+    );
+    await android?.createNotificationChannel(channel);
+
     await android?.requestNotificationsPermission();
     await android?.requestExactAlarmsPermission();
     _ready = true;
@@ -62,24 +83,25 @@ class NotificationService {
     if (!_ready) return;
     await _plugin.show(
       id: 999999,
-      title: 'Kanlé',
-      body: 'Les notifications et alarmes fonctionnent parfaitement !',
+      title: 'Kanlé · Test immédiat',
+      body: 'Le canal d\'alarme prioritaire fonctionne parfaitement !',
       notificationDetails: const NotificationDetails(android: _androidDetails),
     );
   }
 
-  /// Programme une alarme test dans [seconds] secondes (idéal pour tester écran éteint)
+  /// Programme une alarme test dans [seconds] secondes avec le mode AlarmClock natif
+  /// (Idéal pour éteindre l'écran et vérifier le réveil automatique du téléphone)
   static Future<void> scheduleTestDelayed({int seconds = 10}) async {
     if (!_ready) return;
     final now = tz.TZDateTime.now(tz.local);
     final when = now.add(Duration(seconds: seconds));
     await _plugin.zonedSchedule(
       id: 999998,
-      title: 'Kanlé · Alarme test',
-      body: 'Votre rappel a sonné avec succès après $seconds secondes !',
+      title: 'Kanlé · Alarme Réveil ($seconds s)',
+      body: 'Alarme prioritaire déclenchée avec succès en veille !',
       scheduledDate: when,
       notificationDetails: const NotificationDetails(android: _androidDetails),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
     );
   }
 
@@ -95,7 +117,7 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  /// Re-planifie tous les blocs actifs à venir (au démarrage).
+  /// Re-planifie tous les blocs actifs à venir
   static Future<void> rescheduleAll(List<TimeBlock> blocks) async {
     if (!_ready) return;
     for (final b in blocks) {
@@ -105,8 +127,7 @@ class NotificationService {
     }
   }
 
-  /// Programme le rappel d'un bloc avec repli intelligent si le créneau est imminent,
-  /// ainsi que la notification lorsque le bloc est terminé.
+  /// Programme le rappel d'un bloc avec le mode AlarmClock (Priorité système absolue)
   static Future<void> schedule(TimeBlock b) async {
     if (!_ready) return;
     await cancel(b.notifId);
@@ -142,28 +163,16 @@ class NotificationService {
       } else if (start.isAfter(now)) {
         targetSchedule = start;
         bodyText = 'Commence maintenant (${fmtMin(b.startMin)})';
-      } else {
-        final diffSeconds = now.difference(start).inSeconds;
-        if (diffSeconds < 60) {
-          targetSchedule = now.add(const Duration(seconds: 4));
-          bodyText = 'Commence maintenant (${fmtMin(b.startMin)})';
-        }
       }
     } else {
       if (start.isAfter(now)) {
         targetSchedule = start;
         bodyText = 'Commence maintenant (${fmtMin(b.startMin)})';
-      } else {
-        final diffSeconds = now.difference(start).inSeconds;
-        if (diffSeconds < 60) {
-          targetSchedule = now.add(const Duration(seconds: 4));
-          bodyText = 'Commence maintenant (${fmtMin(b.startMin)})';
-        }
       }
     }
 
     if (targetSchedule != null) {
-      debugPrint('Planification alarme début ID ${b.notifId} ("${b.title}") pour $targetSchedule');
+      debugPrint('Planification AlarmClock début ID ${b.notifId} ("${b.title}") pour $targetSchedule');
       try {
         await _plugin.zonedSchedule(
           id: b.notifId,
@@ -171,7 +180,7 @@ class NotificationService {
           body: bodyText,
           scheduledDate: targetSchedule,
           notificationDetails: const NotificationDetails(android: _androidDetails),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: AndroidScheduleMode.alarmClock,
         );
       } catch (e) {
         debugPrint('Erreur planif alarme début: $e');
@@ -181,7 +190,7 @@ class NotificationService {
     // Notification de FIN de bloc demandée par l'utilisateur
     if (end.isAfter(now)) {
       final endNotifId = (b.notifId ^ 0x40000000) & 0x7FFFFFFF;
-      debugPrint('Planification alarme fin ID $endNotifId ("${b.title}") pour $end');
+      debugPrint('Planification AlarmClock fin ID $endNotifId ("${b.title}") pour $end');
       try {
         await _plugin.zonedSchedule(
           id: endNotifId,
@@ -189,7 +198,7 @@ class NotificationService {
           body: 'Le créneau "${b.title}" est maintenant terminé (${fmtMin(b.endMin)}).',
           scheduledDate: end,
           notificationDetails: const NotificationDetails(android: _androidDetails),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: AndroidScheduleMode.alarmClock,
         );
       } catch (e) {
         debugPrint('Erreur planif alarme fin: $e');
@@ -207,7 +216,7 @@ class NotificationService {
     }
   }
 
-  /// Programme le rappel d'une tâche (ponctuelle ou récurrente)
+  /// Programme le rappel d'une tâche (ponctuelle ou récurrente) en mode AlarmClock
   static Future<void> scheduleTask(TaskItem task) async {
     if (!_ready) return;
     await cancelTask(task);
@@ -230,7 +239,7 @@ class NotificationService {
           body: 'Rappel quotidien prévu à ${fmtMin(task.timeMin!)}',
           scheduledDate: target,
           notificationDetails: const NotificationDetails(android: _androidDetails),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: AndroidScheduleMode.alarmClock,
           matchDateTimeComponents: DateTimeComponents.time,
         );
       } catch (e) {
@@ -251,7 +260,7 @@ class NotificationService {
             body: 'Rappel planifié à ${fmtMin(task.timeMin!)}',
             scheduledDate: target,
             notificationDetails: const NotificationDetails(android: _androidDetails),
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            androidScheduleMode: AndroidScheduleMode.alarmClock,
             matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
           );
         } catch (e) {
@@ -267,10 +276,10 @@ class NotificationService {
           await _plugin.zonedSchedule(
             id: task.notifId,
             title: 'Tâche : ${task.title}',
-            body: 'Rappel prévu maintenant (${fmtMin(task.timeMin!)})',
+            body: 'Rappel prévu à ${fmtMin(task.timeMin!)}',
             scheduledDate: target,
             notificationDetails: const NotificationDetails(android: _androidDetails),
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            androidScheduleMode: AndroidScheduleMode.alarmClock,
           );
         } catch (e) {
           debugPrint('Erreur planification tâche ponctuelle: $e');

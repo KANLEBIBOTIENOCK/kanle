@@ -9,7 +9,7 @@ import 'models.dart';
 class AiService {
   static const _uuid = Uuid();
 
-  /// Envoie un prompt à l'IA avec le contexte de l'application et retourne
+  /// Envoie un prompt à l'IA autonome avec le contexte de l'application et retourne
   /// le texte de réponse ainsi qu'une liste d'actions structurées à appliquer.
   static Future<({String text, List<AiAction> actions})> processUserInput({
     required String prompt,
@@ -21,7 +21,7 @@ class AiService {
     final cleanPrompt = prompt.trim();
     if (cleanPrompt.isEmpty) {
       return (
-        text: 'Veuillez saisir une demande ou choisir une suggestion.',
+        text: 'Veuillez saisir une demande ou coller votre planning/routine.',
         actions: <AiAction>[]
       );
     }
@@ -30,29 +30,28 @@ class AiService {
         ? apiKey.trim()
         : AiConfig.geminiApiKey.trim();
 
-    // 1. Tenter l'appel à l'API Gemini si la clé est présente
-    if (effectiveKey.isNotEmpty) {
-      try {
-        final result = await _callGeminiApi(
-          prompt: cleanPrompt,
-          apiKey: effectiveKey,
-          currentDate: currentDate,
-          currentBlocks: currentBlocks,
-          currentTasks: currentTasks,
-        );
-        return result;
-      } catch (e) {
-        debugPrint('Erreur API Gemini: $e, bascule sur le moteur local intelligent.');
-      }
+    if (effectiveKey.isEmpty) {
+      return (
+        text: 'La clé API Gemini n\'est pas encore configurée dans le code (AiConfig.geminiApiKey).',
+        actions: <AiAction>[]
+      );
     }
 
-    // 2. Moteur d'analyse local intelligent (NLP / parsing en français)
-    return _processWithLocalEngine(
-      prompt: cleanPrompt,
-      currentDate: currentDate,
-      currentBlocks: currentBlocks,
-      currentTasks: currentTasks,
-    );
+    try {
+      return await _callGeminiApi(
+        prompt: cleanPrompt,
+        apiKey: effectiveKey,
+        currentDate: currentDate,
+        currentBlocks: currentBlocks,
+        currentTasks: currentTasks,
+      );
+    } catch (e) {
+      debugPrint('Erreur API Gemini: $e');
+      return (
+        text: 'Une erreur est survenue lors de la communication avec l\'assistant IA Gemini :\n$e\n\nVeuillez vérifier votre connexion internet et réessayer.',
+        actions: <AiAction>[]
+      );
+    }
   }
 
   /// Appel de l'API Gemini avec prompt système contextuel et format JSON structuré
@@ -90,46 +89,80 @@ class AiService {
         }).toList();
 
     final systemInstruction = '''
-Tu es l'assistant intelligent de l'application Kanlé (gestion de temps et de planning).
-Tu es bienveillant, clair, dynamique et très précis.
-Date d'aujourd'hui : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour sélectionné : $todayKey).
+Tu es l'assistant IA autonome et exclusif de l'application mobile Kanlé (Time-blocking, Gestion de routines et d'habitudes, Tâches et Productivité).
+Tu es bienveillant, dynamique, méthodique, très précis et tu as une maîtrise parfaite du temps.
+Date actuelle : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour affiché dans l'app : $todayKey).
 Heure actuelle : ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}.
 
-IMPORTANT - RÈGLES MÉTIER :
-1. BLOC DE TEMPS (TimeBlock) : créneau horaire sur le planning pour un jour précis avec heure de début et heure de fin (ex: Travail de 09:00 à 11:00).
-   - Catégories valides : prayer, work, study, sport, focus, rest, routine, social.
-   - Les blocs apparaissent dans le Planning et alimentent immédiatement les Statistiques.
-2. ROUTINE RÉCURRENTE (Routine) : habitude ou activité qui se répète sur plusieurs jours (ex: "Sport tous les matins de 7h à 8h", "Routine lecture du lundi au vendredi de 21h à 22h").
-   - Utilise l'action "add_routine". Elle est visible dans la section Routines et génère automatiquement des blocs dans le Planning et les Statistiques.
-3. TÂCHE (TaskItem) : action ponctuelle ou rappel avec une heure cible ou sans heure (ex: "Appeler maman à 20h" ou "Payer facture aujourd'hui").
-4. GESTION DES CONFLITS : Si l'utilisateur demande de régler les conflits, propose de décaler les blocs qui se chevauchent ou d'ajuster leur durée.
-5. RÈGLE STRICTE ZÉRO CONFLIT : Deux blocs ou routines créés sur la même journée ne doivent JAMAIS se chevaucher (startMin2 >= endMin1). Si une heure demandée est déjà occupée par un bloc existant, décale-la automatiquement sur le prochain créneau disponible.
+=======================================================
+LES CAPACITÉS RÉELLES DE L'APPLICATION (ACTIONS POSSIBLES)
+=======================================================
+Tu peux exécuter les actions suivantes dans le tableau "actions" :
 
-BLOCS ACTUELS :
+1. "add_routine" : CRÉER UNE ROUTINE RÉCURRENTE
+   - Pour les habitudes quotidiennes, matinales, du soir, ou récurrentes certains jours de la semaine.
+   - Les routines créées apparaissent dans l'écran Routines et sont automatiquement synchronisées sur le Planning.
+   - Champs de payload :
+     * "title": Titre court, propre et soigné (ex: "Laver le visage", "Bible audio", "Prière Aline", "Marche")
+     * "startMin": Minute de début depuis minuit (ex: 05h10 = 5*60 + 10 = 310)
+     * "endMin": Minute de fin (ex: 05h12 = 312, 06h00 = 360). STRICTEMENT supérieur à startMin.
+     * "category": Une catégorie parmi: "prayer" (prière, foi, bible, psaume), "study" (étude, révision, lecture, exercice), "routine" (toilette, habillage, rangement, ménage, repas), "work" (projet, biblio, objectifs), "sport" (marche, course, fitness), "focus" (priorité haute), "rest" (détente, musique, repos), "social" (famille, amis).
+     * "weekdays": Tableau des entiers des jours de la semaine (1 = Lundi, 2 = Mardi, 3 = Mercredi, 4 = Jeudi, 5 = Vendredi, 6 = Samedi, 7 = Dimanche). Si tous les jours: [1,2,3,4,5,6,7]. Si du lundi au vendredi: [1,2,3,4,5]. Si un seul jour (ex: Lundi): [1].
+
+2. "add_block" : PLANIFIER UN BLOC DE TEMPS PONCTUEL (TimeBlock)
+   - Pour un créneau spécifique sur un jour précis (ex: "Demain de 14h à 16h réunion", "Aujourd'hui 20h séance code").
+   - Champs de payload :
+     * "title": Titre du créneau
+     * "date": Date au format "YYYY-MM-DD"
+     * "startMin": Minute de début (ex: 840 pour 14:00)
+     * "endMin": Minute de fin (ex: 960 pour 16:00)
+     * "category": Une des catégories valides ("work", "study", "sport", "focus", "rest", "routine", "prayer", "social")
+     * "note": Note optionnelle
+
+3. "add_task" : PROGRAMMER UN RAPPEL OU UNE TÂCHE (TaskItem)
+   - Pour les actions ou rappels sans plage de début-fin continue (ex: "Appeler maman à 18h", "Prendre vitamines à 08h", "Laver habit à 19h").
+   - Champs de payload :
+     * "title": Intitulé propre (ex: "Appeler Papa", "Appeler Aline")
+     * "timeMin": Minute cible dans la journée (ex: 7h25 = 445, 18h00 = 1080, 20h00 = 1200)
+     * "isDaily": true si c'est chaque jour, false sinon
+     * "weekdays": Tableau des jours si récurrent certains jours (ex: [1, 3, 5, 7] pour lun, mer, ven, dim)
+     * "date": "YYYY-MM-DD" si c'est une tâche ponctuelle à un jour donné
+
+4. "delete_block" / "delete_task" / "update_block" / "update_task" / "toggle_task"
+   - Champs : "id": ID de l'élément cible
+
+5. "resolve_conflicts" : RÉSOUDRE LES CONFLITS D'HORAIRES
+   - "date": "YYYY-MM-DD"
+
+=======================================================
+RÈGLE CRITIQUE ABSOLUE : DÉCOMPOSITION SYSTÉMATIQUE (BATCH PARSING)
+=======================================================
+Quand l'utilisateur te colle ou te dicte un emploi du temps, une liste de journée, une routine complète ou plusieurs activités (ex: 10 créneaux avec heures, ou une liste d'appels à faire) :
+- TU NE DOIS JAMAIS, SOUS AUCUN PRÉTEXTE, fusionner ou concaténer plusieurs activités dans un seul titre ou une seule action !
+- Tu DOIS IMPÉRATIVEMENT générer AUTANT D'ACTIONS DISTINCTES dans le tableau "actions" qu'il y a d'activités individuelles !
+- Exemple : Si l'utilisateur donne 15 créneaux et 5 rappels d'appels, ton tableau "actions" DOIT contenir exactement 20 objets distincts.
+- Chaque objet doit avoir son propre titre propre, ses propres minutes calculées de début et de fin, ses bons jours `weekdays`, et sa catégorie appropriée.
+- Zéro conflit : Assure-toi que les heures début/fin de créneaux successifs ne se chevauchent pas de manière incohérente (ex: 05h10-05h12 puis 05h14-05h24).
+
+BLOCS ACTUELS DE L'UTILISATEUR :
 ${jsonEncode(blocksContext)}
 
-TÂCHES ACTUELLES :
+TÂCHES ACTUELLES DE L'UTILISATEUR :
 ${jsonEncode(tasksContext)}
 
-FORMAT DE RÉPONSE OBLIGATOIRE :
-Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superflues :
+FORMAT DE SORTIE OBLIGATOIRE (STRICTEMENT EN JSON SANS TEXTE AVANT OU APRÈS) :
 {
-  "response": "Explication claire et chaleureuse en français de ce que tu proposes ou as fait",
+  "response": "Explication claire, chaleureuse et structurée en français récapitulant exactement tout ce qui a été découpé et préparé pour l'utilisateur.",
   "actions": [
     {
-      "type": "add_routine", // ou "add_block", "update_block", "delete_block", "add_task", "update_task", "delete_task", "toggle_task", "resolve_conflicts"
-      "description": "Description concise de l'action en français",
+      "type": "add_routine", // ou "add_block", "add_task", etc.
+      "description": "Description humaine concise (ex: Créer la routine : Laver le visage (05:10 - 05:12, Lun))",
       "payload": {
-        // Pour add_routine:
-        // "title": "Sport du matin", "startMin": 420, "endMin": 480, "category": "sport", "weekdays": [1,2,3,4,5,6,7]
-        // Pour add_block:
-        // "title": "...", "date": "YYYY-MM-DD", "startMin": 540, "endMin": 660, "category": "work", "note": "..."
-        // Pour add_task:
-        // "title": "...", "timeMin": 1200, "isDaily": true/false, "date": "YYYY-MM-DD", "weekdays": [1,2,...]
-        // Pour delete_block / delete_task / update_...:
-        // "id": "..."
-        // Pour resolve_conflicts:
-        // "date": "YYYY-MM-DD"
+        "title": "Laver le visage",
+        "startMin": 310,
+        "endMin": 312,
+        "category": "routine",
+        "weekdays": [1]
       }
     }
   ]
@@ -138,7 +171,7 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
 
     String? rawText;
 
-    // 1. Tenter l'appel REST direct avec header X-goog-api-key (conforme au curl)
+    // 1. Tenter l'appel REST direct avec header X-goog-api-key (rapide, sans wrapper)
     try {
       final url = Uri.parse(
           'https://generativelanguage.googleapis.com/v1beta/models/${AiConfig.geminiModel}:generateContent');
@@ -158,7 +191,7 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
         ],
         'generationConfig': {
           'responseMimeType': 'application/json',
-          'temperature': 0.2,
+          'temperature': 0.1,
         },
       });
 
@@ -180,19 +213,21 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
             rawText = parts[0]['text'] as String?;
           }
         }
+      } else {
+        debugPrint('REST Gemini a répondu avec code ${resp.statusCode}: ${resp.body}');
       }
     } catch (e) {
-      debugPrint('Tentative REST direct échouée ($e), tentative SDK google_generative_ai...');
+      debugPrint('Tentative REST échouée ($e), tentative via le SDK official google_generative_ai...');
     }
 
-    // 2. Si le REST direct n'a pas répondu, tenter le SDK officiel
+    // 2. Si le REST n'a pas répondu, tenter le SDK officiel google_generative_ai
     if (rawText == null || rawText.isEmpty) {
       final model = GenerativeModel(
         model: AiConfig.geminiModel,
         apiKey: apiKey,
         generationConfig: GenerationConfig(
           responseMimeType: 'application/json',
-          temperature: 0.2,
+          temperature: 0.1,
         ),
         systemInstruction: Content.system(systemInstruction),
       );
@@ -201,11 +236,24 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
     }
 
     if (rawText == null || rawText.isEmpty) {
-      throw Exception('Réponse vide de Gemini');
+      throw Exception('Aucune réponse reçue de l\'API Gemini.');
     }
 
-    final parsed = jsonDecode(rawText);
-    final text = parsed['response'] as String? ?? 'Voici mes propositions :';
+    // Nettoyer les balises éventuelles de markdown (ex: ```json ... ```)
+    var cleanedJson = rawText.trim();
+    if (cleanedJson.startsWith('```')) {
+      final firstLineEnd = cleanedJson.indexOf('\n');
+      if (firstLineEnd != -1) {
+        cleanedJson = cleanedJson.substring(firstLineEnd + 1);
+      }
+      if (cleanedJson.endsWith('```')) {
+        cleanedJson = cleanedJson.substring(0, cleanedJson.length - 3);
+      }
+      cleanedJson = cleanedJson.trim();
+    }
+
+    final parsed = jsonDecode(cleanedJson);
+    final text = parsed['response'] as String? ?? 'Voici les actions préparées pour vous :';
     final actionsJson = parsed['actions'] as List? ?? [];
 
     final actions = <AiAction>[];
@@ -222,283 +270,5 @@ Tu DOIS répondre STRICTEMENT au format JSON valide suivant, sans balises superf
     }
 
     return (text: text, actions: actions);
-  }
-
-  /// Moteur local de secours (analyse le texte en français pour détecter intentions et créations)
-  static ({String text, List<AiAction> actions}) _processWithLocalEngine({
-    required String prompt,
-    required DateTime currentDate,
-    required List<TimeBlock> currentBlocks,
-    required List<TaskItem> currentTasks,
-  }) {
-    final lower = prompt.toLowerCase();
-    final todayStr = dateKey(currentDate);
-    final tomorrowStr = dateKey(currentDate.add(const Duration(days: 1)));
-    final actions = <AiAction>[];
-
-    // 1. Détection de gestion des conflits
-    if (lower.contains('conflit') ||
-        lower.contains('chevauche') ||
-        lower.contains('résoudre') ||
-        lower.contains('regle le planning') ||
-        lower.contains('réparer planning')) {
-      actions.add(AiAction(
-        id: _uuid.v4(),
-        type: 'resolve_conflicts',
-        description: 'Résoudre automatiquement les conflits de planning pour le $todayStr',
-        payload: {'date': todayStr},
-      ));
-      return (
-        text: 'J\'ai détecté votre souhait de réorganiser les chevauchements. Je vous propose d\'ajuster et de décaler en cascade les créneaux en conflit.',
-        actions: actions
-      );
-    }
-
-    // 2. Détection prioritaire de Blocs & Routines (plage horaire début - fin, mot "bloc", "routine", "habitude")
-    final blockRegex = RegExp(
-        r'(?:de\s+)?(\d{1,2})\s*(?:h|:)\s*(\d{2})?\s*(?:à|au|-)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?',
-        caseSensitive: false);
-    final matchBlock = blockRegex.firstMatch(lower);
-
-    final hasBlockOrRoutineIntent = matchBlock != null ||
-        lower.contains('bloc') ||
-        lower.contains('créneau') ||
-        lower.contains('creneau') ||
-        lower.contains('routine') ||
-        lower.contains('habitude');
-
-    if (hasBlockOrRoutineIntent) {
-      int startMin = 540; // 09:00 par défaut
-      int endMin = 600;   // 10:00 par défaut
-
-      if (matchBlock != null) {
-        final h1 = int.tryParse(matchBlock.group(1) ?? '9') ?? 9;
-        final m1 = int.tryParse(matchBlock.group(2) ?? '0') ?? 0;
-        final h2 = int.tryParse(matchBlock.group(3) ?? '10') ?? 10;
-        final m2 = int.tryParse(matchBlock.group(4) ?? '0') ?? 0;
-        startMin = (h1 * 60 + m1).clamp(0, 1439);
-        endMin = (h2 * 60 + m2).clamp(0, 1440);
-        if (endMin <= startMin) endMin = (startMin + 60).clamp(0, 1440);
-      } else {
-        final singleTimeRegex = RegExp(r'(\d{1,2})\s*(?:h|:)\s*(\d{2})?');
-        final singleMatch = singleTimeRegex.firstMatch(lower);
-        if (singleMatch != null) {
-          final h = int.tryParse(singleMatch.group(1) ?? '9') ?? 9;
-          final m = int.tryParse(singleMatch.group(2) ?? '0') ?? 0;
-          startMin = (h * 60 + m).clamp(0, 1439);
-          endMin = (startMin + 60).clamp(0, 1440);
-        }
-      }
-
-      final isRecurring = lower.contains('chaque jour') ||
-          lower.contains('tous les jours') ||
-          lower.contains('chaque matin') ||
-          lower.contains('tous les matins') ||
-          lower.contains('chaque soir') ||
-          lower.contains('tous les soirs') ||
-          lower.contains('quotidien') ||
-          lower.contains('lundi au vendredi') ||
-          lower.contains('semaine') ||
-          lower.contains('week-end') ||
-          lower.contains('weekend') ||
-          lower.contains('routine') ||
-          lower.contains('habitude');
-
-      // Jours concernés
-      List<int> weekdays = [1, 2, 3, 4, 5, 6, 7];
-      var daysDesc = 'Tous les jours';
-      if (lower.contains('lundi au vendredi') || lower.contains('semaine')) {
-        weekdays = [1, 2, 3, 4, 5];
-        daysDesc = 'Lun - Ven';
-      } else if (lower.contains('week-end') || lower.contains('weekend')) {
-        weekdays = [6, 7];
-        daysDesc = 'Week-end';
-      }
-
-      // Déduction de la catégorie
-      var cat = 'work';
-      if (lower.contains('manger') || lower.contains('repas') || lower.contains('déjeuner') || lower.contains('dîner') || lower.contains('petit-déjeuner') || lower.contains('cuisine')) cat = 'routine';
-      if (lower.contains('routine') || lower.contains('habitude') || lower.contains('vie') || lower.contains('quotidien')) cat = 'routine';
-      if (lower.contains('sport') || lower.contains('gym') || lower.contains('courir') || lower.contains('fitness')) cat = 'sport';
-      if (lower.contains('prière') || lower.contains('priere') || lower.contains('méditer') || lower.contains('foi')) cat = 'prayer';
-      if (lower.contains('étude') || lower.contains('etude') || lower.contains('lire') || lower.contains('lecture')) cat = 'study';
-      if (lower.contains('repos') || lower.contains('pause') || lower.contains('sieste') || lower.contains('détente')) cat = 'rest';
-
-      // Extraction et nettoyage propre du titre
-      var title = prompt;
-      title = title.replaceAll(
-          RegExp(r"créer des blocs|créer un bloc|crée des blocs|crée un bloc|ajouter des blocs|ajouter un bloc|ajoute des blocs|ajoute un bloc|planifier un bloc|planifie un bloc|planifier|planifie|un bloc|des blocs|le bloc|les blocs|blocs|bloc|créneau|créer une routine|ajoute une routine|routine|habitude",
-              caseSensitive: false),
-          '');
-      title = title.replaceAll(
-          RegExp(r"chaque jour|tous les jours|tous les matins|chaque matin|tous les soirs|chaque soir|du lundi au vendredi|le week-end|aujourd'hui|demain",
-              caseSensitive: false),
-          '');
-      if (matchBlock != null) {
-        title = title.replaceAll(matchBlock.group(0)!, '');
-      }
-      title = title.replaceAll(RegExp(r'^\s*(?:de|à|au|-)\s*', caseSensitive: false), '');
-      title = title.replaceAll(RegExp(r'["'']'), '').trim();
-      if (title.isEmpty) title = isRecurring ? 'Routine quotidienne' : 'Nouveau créneau';
-      title = title[0].toUpperCase() + title.substring(1);
-
-      final dateTarget = lower.contains('demain') ? tomorrowStr : todayStr;
-
-      if (isRecurring) {
-        actions.add(AiAction(
-          id: _uuid.v4(),
-          type: 'add_routine',
-          description: 'Créer la routine récurrente : "$title" (${fmtMin(startMin)} - ${fmtMin(endMin)}, $daysDesc)',
-          payload: {
-            'title': title,
-            'startMin': startMin,
-            'endMin': endMin,
-            'category': cat,
-            'weekdays': weekdays,
-            'isRoutine': true,
-          },
-        ));
-
-        return (
-          text: 'Excellente idée ! J\'ai préparé la routine "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} ($daysDesc). Dès validation, elle sera visible dans vos Routines & Habitudes et planifiée sur vos journées.',
-          actions: actions
-        );
-      } else {
-        actions.add(AiAction(
-          id: _uuid.v4(),
-          type: 'add_block',
-          description: 'Planifier le bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} le $dateTarget',
-          payload: {
-            'title': title,
-            'date': dateTarget,
-            'startMin': startMin,
-            'endMin': endMin,
-            'category': cat,
-            'isRoutine': cat == 'routine',
-          },
-        ));
-
-        return (
-          text: 'C\'est noté ! J\'ai préparé la planification du bloc "$title" de ${fmtMin(startMin)} à ${fmtMin(endMin)} sur votre planning.',
-          actions: actions
-        );
-      }
-    }
-
-    // 3. Détection de création / gestion de tâche simple to-do (sans début/fin, ex: "appeler maman à 20h", "prendre médicaments à 8h")
-    final isTaskIntent = lower.contains('tâche') ||
-        lower.contains('tache') ||
-        lower.contains('appeler') ||
-        lower.contains('rappelle') ||
-        lower.contains('penser à') ||
-        lower.contains('médicament') ||
-        lower.contains('maman');
-
-    if (isTaskIntent) {
-      final isDaily = lower.contains('tous les jours') ||
-          lower.contains('chaque jour') ||
-          lower.contains('quotidien');
-
-      // Détection de l'heure (ex: "à 20h", "20h30", "20:00", "21 h")
-      int? targetMin;
-      final timeRegex = RegExp(r'(\d{1,2})\s*(?:h|:)\s*(\d{2})?');
-      final timeMatch = timeRegex.firstMatch(lower);
-      if (timeMatch != null) {
-        final h = int.tryParse(timeMatch.group(1) ?? '0') ?? 0;
-        final m = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
-        targetMin = (h * 60 + m).clamp(0, 1439);
-      }
-
-      // Extraction du titre de la tâche
-      var title = prompt;
-      title = title.replaceAll(
-          RegExp(r"créer une tâche|ajoute une tâche|rappelle-?moi d[e']|penser à|il faut que je",
-              caseSensitive: false),
-          '');
-      title = title.replaceAll(
-          RegExp(r"tous les jours|chaque jour|aujourd'hui|demain",
-              caseSensitive: false),
-          '');
-      if (timeMatch != null) {
-        title = title.replaceAll(timeMatch.group(0)!, '');
-      }
-      title = title.replaceAll(RegExp(r'^\s*à\s*', caseSensitive: false), '').trim();
-      title = title.replaceAll(RegExp(r'["'']'), '').trim();
-      if (title.isEmpty) title = prompt.trim();
-      if (title.isNotEmpty) {
-        title = title[0].toUpperCase() + title.substring(1);
-      }
-
-      final dateTarget = lower.contains('demain') ? tomorrowStr : todayStr;
-
-      actions.add(AiAction(
-        id: _uuid.v4(),
-        type: 'add_task',
-        description: isDaily
-            ? 'Créer la tâche récurrente : "$title" (Tous les jours à ${targetMin != null ? fmtMin(targetMin) : "l'heure indiquée"})'
-            : 'Créer la tâche : "$title" (${dateTarget == todayStr ? "Aujourd'hui" : "Demain"} à ${targetMin != null ? fmtMin(targetMin) : "l'heure indiquée"})',
-        payload: {
-          'title': title,
-          'timeMin': targetMin ?? 1200,
-          'isDaily': isDaily,
-          'date': isDaily ? null : dateTarget,
-        },
-      ));
-
-      return (
-        text: isDaily
-            ? 'C\'est noté ! Je vous propose de programmer cette tâche quotidienne avec rappel automatique.'
-            : 'Parfait ! Je vous propose d\'ajouter cette tâche ponctuelle avec son alarme.',
-        actions: actions
-      );
-    }
-
-    // 4. Détection de suppression
-    if (lower.contains('supprime') || lower.contains('supprimer') || lower.contains('effacer') || lower.contains('annuler')) {
-      // Chercher si un bloc ou une tâche correspond au nom
-      final matchingBlock = currentBlocks.firstWhere(
-        (b) => lower.contains(b.title.toLowerCase()),
-        orElse: () => TimeBlock(id: '', title: '', colorValue: 0, startMin: 0, endMin: 0, date: ''),
-      );
-      if (matchingBlock.id.isNotEmpty) {
-        actions.add(AiAction(
-          id: _uuid.v4(),
-          type: 'delete_block',
-          description: 'Supprimer le bloc "${matchingBlock.title}" (${fmtMin(matchingBlock.startMin)} - ${fmtMin(matchingBlock.endMin)})',
-          payload: {'id': matchingBlock.id},
-        ));
-        return (
-          text: 'Je vous propose de supprimer le bloc "${matchingBlock.title}".',
-          actions: actions
-        );
-      }
-
-      final matchingTask = currentTasks.firstWhere(
-        (t) => lower.contains(t.title.toLowerCase()),
-        orElse: () => TaskItem(id: '', title: ''),
-      );
-      if (matchingTask.id.isNotEmpty) {
-        actions.add(AiAction(
-          id: _uuid.v4(),
-          type: 'delete_task',
-          description: 'Supprimer la tâche "${matchingTask.title}"',
-          payload: {'id': matchingTask.id},
-        ));
-        return (
-          text: 'Je vous propose de retirer la tâche "${matchingTask.title}".',
-          actions: actions
-        );
-      }
-    }
-
-    // Réponse par défaut d'aide
-    return (
-      text: 'Je suis à votre disposition ! Vous pouvez me demander par exemple :\n'
-          '• "Rappelle-moi d\'appeler maman tous les jours à 20h"\n'
-          '• "Prendre mes vitamines aujourd\'hui à 21h"\n'
-          '• "Planifie un bloc Focus de 14h à 16h demain"\n'
-          '• "Résous les conflits d\'horaires d\'aujourd\'hui"',
-      actions: <AiAction>[]
-    );
   }
 }

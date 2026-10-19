@@ -1131,7 +1131,7 @@ class AppState extends ChangeNotifier {
     try {
       final result = await AiService.processUserInput(
         prompt: prompt,
-        apiKey: geminiApiKey.isNotEmpty ? geminiApiKey : AiConfig.geminiApiKey,
+        apiKey: AiConfig.geminiApiKey.isNotEmpty ? AiConfig.geminiApiKey : geminiApiKey,
         currentDate: selectedDate,
         currentBlocks: blocks,
         currentTasks: tasks,

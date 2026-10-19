@@ -426,8 +426,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.verified_user_outlined, color: Color(0xFF00B894)),
-                  title: const Text('Autorisations Android', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
-                  subtitle: const Text('Vérifier l\'accès aux notifications et alarmes exactes', style: TextStyle(fontSize: 12)),
+                  title: const Text('Autorisations & Alarmes exactes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: const Text('Accès aux alarmes système et notifications prioritaires', style: TextStyle(fontSize: 12)),
                   trailing: TextButton(
                     onPressed: () async {
                       HapticFeedback.selectionClick();
@@ -436,12 +436,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             behavior: SnackBarBehavior.floating,
-                            content: Text('Demande d\'autorisations transmise au système.'),
+                            content: Text('Vérification des autorisations système effectuée.'),
                           ),
                         );
                       }
                     },
                     child: const Text('Vérifier'),
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.alarm_on_rounded, color: Color(0xFF6C5CE7)),
+                  title: const Text('Tester en veille (10 secondes)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: const Text('Verrouillez votre téléphone pour tester le réveil autonome', style: TextStyle(fontSize: 12)),
+                  trailing: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                    label: const Text('Tester'),
+                    onPressed: () async {
+                      HapticFeedback.mediumImpact();
+                      await NotificationService.scheduleTestDelayed(seconds: 10);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            duration: Duration(seconds: 5),
+                            content: Text('⏰ Alarme programmée dans 10 secondes ! Verrouillez votre écran maintenant.'),
+                          ),
+                        );
+                      }
+                    },
                   ),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
