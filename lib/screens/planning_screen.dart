@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../ai_service.dart';
 import '../app_state.dart';
 import '../models.dart';
 import 'ai_assistant_screen.dart';
@@ -235,6 +236,206 @@ class PlanningScreen extends StatelessWidget {
     );
   }
 
+  void _showDelayDialog(BuildContext context, DateTime date) {
+    final s = context.read<AppState>();
+    final dStr = dateKey(date);
+    int selectedMinutes = 30;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Icon(Icons.bolt_rounded, color: Color(0xFFE17055), size: 24),
+                  SizedBox(width: 8),
+                  Text(
+                    'Réajuster un Retard',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Indiquez votre retard : Kanlé décalera automatiquement tous les créneaux futurs de la journée sans conflit et compressera les pauses si nécessaire.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                children: [15, 30, 45, 60, 90].map((m) {
+                  final isSel = selectedMinutes == m;
+                  return ChoiceChip(
+                    label: Text('+$m min'),
+                    selected: isSel,
+                    selectedColor: const Color(0xFF6C5CE7),
+                    labelStyle: TextStyle(
+                      color: isSel ? Colors.white : null,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    onSelected: (val) {
+                      if (val) setSheetState(() => selectedMinutes = m);
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6C5CE7),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  label: Text('Décaler les blocs de +$selectedMinutes min'),
+                  onPressed: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.pop(ctx);
+                    final count = s.applySmartDelayAdjustment(
+                      dateStr: dStr,
+                      delayMinutes: selectedMinutes,
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: const Color(0xFF2D3436),
+                        content: Text(
+                          count > 0
+                              ? '⚡ $count bloc(s) décalé(s) de +$selectedMinutes min sans conflit !'
+                              : 'Aucun bloc restant à décaler pour aujourd\'hui.',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCoachBilanDialog(BuildContext context, DateTime date) {
+    final s = context.read<AppState>();
+    final blocks = s.blocksFor(date);
+    final tasks = s.tasks;
+    final periodName = DateFormat('EEEE d MMMM', 'fr_FR').format(date);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => FutureBuilder<String>(
+        future: AiService.generateProductivityReview(
+          periodName: periodName,
+          blocks: blocks,
+          tasks: tasks,
+          isWeekly: false,
+          chronotype: s.chronotype,
+          apiKey: s.geminiApiKey,
+        ),
+        builder: (ctx, snapshot) {
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF6C5CE7), Color(0xFF00CEC9)],
+                        ),
+                      ),
+                      child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Bilan Coach IA · $periodName',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: snapshot.connectionState == ConnectionState.waiting
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(strokeWidth: 2.5),
+                              SizedBox(height: 14),
+                              Text('Analyse de votre productivité en cours...', style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          child: SelectableText(
+                            snapshot.data ?? 'Aucun bilan disponible.',
+                            style: const TextStyle(fontSize: 14, height: 1.5),
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Fermer'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
@@ -431,6 +632,67 @@ class PlanningScreen extends StatelessWidget {
                           minHeight: 7,
                           value: planned > 0 ? (done / planned) : 0,
                           backgroundColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => _showDelayDialog(context, date),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE17055).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFFE17055).withOpacity(0.35),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.bolt_rounded, size: 14, color: Color(0xFFE17055)),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      '⚡ J\'ai du retard',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFE17055)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => _showCoachBilanDialog(context, date),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6C5CE7).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFF6C5CE7).withOpacity(0.35),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.auto_awesome_rounded, size: 13, color: Color(0xFF6C5CE7)),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      '✨ Bilan Coach IA',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF6C5CE7)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

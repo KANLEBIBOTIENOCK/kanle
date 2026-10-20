@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../ai_service.dart';
 import '../app_state.dart';
 import '../models.dart';
 
@@ -305,6 +306,114 @@ class _StatsScreenState extends State<StatsScreen> {
                         ),
                       );
                     },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showAiStatsAnalysis(
+    BuildContext context,
+    String periodLabel,
+    List<MapEntry<String, int>> byCat,
+    double totalHours,
+  ) {
+    final s = context.read<AppState>();
+    final catHours = <String, double>{};
+    for (final e in byCat) {
+      final name = getCategoryById(e.key, s.categories).name;
+      catHours[name] = e.value / 60;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => FutureBuilder<String>(
+        future: AiService.analyzeProductivityStats(
+          categoryHours: catHours,
+          totalHours: totalHours,
+          periodName: periodLabel,
+          chronotype: s.chronotype,
+          apiKey: s.geminiApiKey,
+        ),
+        builder: (ctx, snapshot) {
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF6C5CE7), Color(0xFF00CEC9)],
+                        ),
+                      ),
+                      child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Analyse IA du Temps · $periodLabel',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: snapshot.connectionState == ConnectionState.waiting
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(strokeWidth: 2.5),
+                              SizedBox(height: 14),
+                              Text(
+                                'Le coach IA analyse la répartition de vos activités...',
+                                style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+                              ),
+                            ],
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          child: SelectableText(
+                            snapshot.data ?? 'Aucune recommandation disponible.',
+                            style: const TextStyle(fontSize: 14, height: 1.5),
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Fermer'),
                   ),
                 ),
               ],
@@ -623,16 +732,40 @@ class _StatsScreenState extends State<StatsScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
+                    const SizedBox(width: 6),
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         visualDensity: VisualDensity.compact,
+                        backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.12),
                       ),
-                      icon: const Icon(Icons.tune_rounded, size: 15, color: Color(0xFF6C5CE7)),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF6C5CE7)),
+                      label: const Text(
+                        'Analyse IA',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF6C5CE7)),
+                      ),
+                      onPressed: byCat.isEmpty
+                          ? null
+                          : () {
+                              HapticFeedback.mediumImpact();
+                              _showAiStatsAnalysis(
+                                context,
+                                periodLabel,
+                                byCat,
+                                totalPlannedMinutes / 60,
+                              );
+                            },
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.tune_rounded, size: 15, color: Colors.grey),
                       label: const Text(
                         'Gérer',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6C5CE7)),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
                       ),
                       onPressed: () => _showCategoryManager(context),
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../app_state.dart';
 import '../models.dart';
 
@@ -16,8 +17,219 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isComposing = false;
-
   int _suggestionOffset = 0;
+
+  late final stt.SpeechToText _speech;
+  bool _isListening = false;
+  bool _speechAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _speech = stt.SpeechToText();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    try {
+      final available = await _speech.initialize(
+        onError: (err) {
+          if (mounted) setState(() => _isListening = false);
+        },
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            if (mounted) setState(() => _isListening = false);
+          }
+        },
+      );
+      if (mounted) {
+        setState(() => _speechAvailable = available);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleListening() async {
+    HapticFeedback.mediumImpact();
+    if (!_speechAvailable) {
+      await _initSpeech();
+      if (!_speechAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('Reconnaissance vocale non disponible ou autorisation micro refusée.'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+    } else {
+      setState(() => _isListening = true);
+      await _speech.listen(
+        onResult: (result) {
+          if (mounted) {
+            setState(() {
+              _textController.text = result.recognizedWords;
+              _isComposing = result.recognizedWords.trim().isNotEmpty;
+              _textController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _textController.text.length),
+              );
+            });
+          }
+        },
+        localeId: 'fr_FR',
+        cancelOnError: true,
+        listenFor: const Duration(seconds: 40),
+      );
+    }
+  }
+
+  void _showGoalBreakdownDialog(BuildContext context) {
+    final titleCtrl = TextEditingController();
+    int targetDays = 7;
+    int targetHours = 8;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Icon(Icons.track_changes_rounded, color: Color(0xFF6C5CE7), size: 22),
+                  SizedBox(width: 8),
+                  Text(
+                    'Planifier par Objectif',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'L\'IA découpe votre objectif en modules d\'étude/travail de 45-60 min et les positionne sur vos créneaux libres.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: titleCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: 'Intitulé de l\'objectif',
+                  hintText: 'Ex: Examen de Mathématiques, Projet Kanlé...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Échéance :', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<int>(
+                          value: targetDays,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 3, child: Text('Dans 3 jours')),
+                            DropdownMenuItem(value: 5, child: Text('Dans 5 jours')),
+                            DropdownMenuItem(value: 7, child: Text('Dans 1 semaine')),
+                            DropdownMenuItem(value: 10, child: Text('Dans 10 jours')),
+                            DropdownMenuItem(value: 14, child: Text('Dans 2 semaines')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setSheetState(() => targetDays = v);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Volume d\'étude :', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<int>(
+                          value: targetHours,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 4, child: Text('4 heures')),
+                            DropdownMenuItem(value: 6, child: Text('6 heures')),
+                            DropdownMenuItem(value: 8, child: Text('8 heures')),
+                            DropdownMenuItem(value: 12, child: Text('12 heures')),
+                            DropdownMenuItem(value: 16, child: Text('16 heures')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setSheetState(() => targetHours = v);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6C5CE7),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                  label: const Text('Générer la planification intelligente'),
+                  onPressed: () {
+                    final title = titleCtrl.text.trim();
+                    if (title.isEmpty) return;
+                    HapticFeedback.mediumImpact();
+                    Navigator.pop(ctx);
+                    final prompt =
+                        'Planifie mon objectif : "$title" sur les $targetDays prochains jours (environ $targetHours heures au total). Découpe en modules d\'étude de 45 à 60 minutes placés intelligemment dans mes créneaux libres en respectant mon chronotype.';
+                    _handleSend(prompt);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   static const Map<int, List<String>> _weekdaySuggestions = {
     DateTime.monday: [
@@ -109,6 +321,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   @override
   void dispose() {
+    if (_isListening) {
+      _speech.stop();
+    }
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -478,6 +693,23 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                           HapticFeedback.selectionClick();
                           setState(() => _suggestionOffset++);
                         },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: const Text('🎯 Planifier Objectif',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF6C5CE7))),
+                        avatar: const Icon(Icons.track_changes_rounded,
+                            size: 14, color: Color(0xFF6C5CE7)),
+                        backgroundColor:
+                            isDark ? const Color(0xFF1E1E2C) : const Color(0xFFF1EEFD),
+                        side: BorderSide(
+                            color: const Color(0xFF6C5CE7).withOpacity(0.3)),
+                        onPressed: () => _showGoalBreakdownDialog(context),
                       ),
                     ),
                     ..._quickPrompts.map((p) {
@@ -997,16 +1229,50 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 textCapitalization: TextCapitalization.sentences,
                 onChanged: (val) => setState(() => _isComposing = val.trim().isNotEmpty),
                 onSubmitted: state.isAiLoading ? null : (val) => _handleSend(),
-                decoration: const InputDecoration(
-                  hintText: 'Demandez à l\'IA (ex: appeler maman)...',
-                  hintStyle: TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: _isListening
+                      ? '🎙️ Parlez maintenant, l\'IA écoute...'
+                      : 'Demandez à l\'IA (ex: appeler maman)...',
+                  hintStyle: TextStyle(
+                    fontSize: 13,
+                    color: _isListening ? Colors.redAccent : null,
+                    fontWeight: _isListening ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  prefixIcon: IconButton(
+                    tooltip: 'Planifier par Objectif',
+                    icon: const Icon(Icons.track_changes_rounded, size: 18, color: Color(0xFF6C5CE7)),
+                    onPressed: () => _showGoalBreakdownDialog(context),
+                  ),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                 ),
               ),
             ),
           ),
           const SizedBox(width: 8),
+
+          // Bouton Dictaphone Vocal (Microphone)
+          Material(
+            color: _isListening
+                ? Colors.redAccent
+                : (isDark ? const Color(0xFF28283C) : const Color(0xFFEAEBFA)),
+            borderRadius: BorderRadius.circular(24),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: state.isAiLoading ? null : _toggleListening,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Icon(
+                  _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  color: _isListening ? Colors.white : const Color(0xFF6C5CE7),
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+
+          // Bouton d'envoi
           Material(
             color: _isComposing && !state.isAiLoading
                 ? const Color(0xFF6C5CE7)

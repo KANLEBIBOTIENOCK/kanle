@@ -615,6 +615,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(
+                  leading: const Icon(Icons.bolt_rounded, color: Color(0xFFFDCB6E)),
+                  title: const Text('Profil d\'énergie (Chronotype)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  subtitle: const Text('Adapte le placement des blocs de travail intense selon vos heures de forme', style: TextStyle(fontSize: 12)),
+                  trailing: DropdownButton<String>(
+                    value: s.chronotype,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 'morning', child: Text('🌅 Matinal (Alouette)')),
+                      DropdownMenuItem(value: 'evening', child: Text('🌙 Du soir (Hibou)')),
+                      DropdownMenuItem(value: 'balanced', child: Text('⚖️ Équilibré')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) {
+                        HapticFeedback.selectionClick();
+                        s.setChronotype(v);
+                      }
+                    },
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
                   leading: const Icon(Icons.task_alt_rounded, color: Color(0xFF00B894)),
                   title: const Text('Gestion exclusive des Tâches', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
                   subtitle: Text(

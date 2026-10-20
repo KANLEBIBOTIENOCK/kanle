@@ -17,6 +17,7 @@ class AiService {
     required DateTime currentDate,
     required List<TimeBlock> currentBlocks,
     required List<TaskItem> currentTasks,
+    String chronotype = 'morning',
   }) async {
     final cleanPrompt = prompt.trim();
     if (cleanPrompt.isEmpty) {
@@ -44,6 +45,7 @@ class AiService {
         currentDate: currentDate,
         currentBlocks: currentBlocks,
         currentTasks: currentTasks,
+        chronotype: chronotype,
       );
     } catch (e) {
       debugPrint('Erreur API Gemini: $e');
@@ -61,6 +63,7 @@ class AiService {
     required DateTime currentDate,
     required List<TimeBlock> currentBlocks,
     required List<TaskItem> currentTasks,
+    String chronotype = 'morning',
   }) async {
     final now = DateTime.now();
     final todayKey = dateKey(currentDate);
@@ -81,18 +84,25 @@ class AiService {
         }).toList();
 
     final blocksSnippet = blocksContext.isNotEmpty
-        ? '\nBLOCS ACTUELS : ${jsonEncode(blocksContext)}'
+        ? '\nBLOCS ACTUELS DU JOUR : ${jsonEncode(blocksContext)}'
         : '';
     final tasksSnippet = tasksContext.isNotEmpty
         ? '\nTÂCHES ACTUELLES : ${jsonEncode(tasksContext)}'
         : '';
 
-    final systemInstruction = '''
-Tu es l'assistant IA autonome et ultra-rapide de l'application mobile Kanlé (Time-blocking, Routines, Tâches).
-Date actuelle : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour affiché : $todayKey).
-Heure actuelle : ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}.$blocksSnippet$tasksSnippet
+    final chronoDesc = switch (chronotype) {
+      'evening' => 'L\'utilisateur a un chronotype DU SOIR (pic d\'énergie 16h-22h). Privilégie les blocs intellectuels intenses (study, work, focus) l\'après-midi et en soirée.',
+      'balanced' => 'L\'utilisateur a un chronotype ÉQUILIBRÉ (pic d\'énergie 10h-16h).',
+      _ => 'L\'utilisateur a un chronotype MATINAL (pic d\'énergie 06h-12h). Privilégie les blocs intellectuels intenses (study, work, focus) tôt le matin.',
+    };
 
-ACTIONS POSSIBLES :
+    final systemInstruction = '''
+Tu es l'assistant IA autonome et ultra-rapide de l'application mobile Kanlé (Time-blocking, Routines, Tâches, Coaching).
+Date actuelle : ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} (Jour affiché : $todayKey).
+Heure actuelle : ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}.
+Profil d'énergie : $chronoDesc$blocksSnippet$tasksSnippet
+
+ACTIONS DISPONIBLES :
 1. "add_routine": Créer une habitude récurrente (payload: "title", "startMin", "endMin", "category", "weekdays").
    Catégories valides: "prayer", "study", "routine", "work", "sport", "focus", "rest", "social".
    weekdays: [1..7] (1=Lundi, 7=Dimanche).
@@ -100,15 +110,14 @@ ACTIONS POSSIBLES :
 3. "add_task": Créer une tâche ou rappel (payload: "title", "timeMin", "isDaily", "weekdays", "date").
 4. "resolve_conflicts": Résoudre les chevauchements (payload: "date" [YYYY-MM-DD]).
 
-RÈGLE ABSOLUE - DÉCOMPOSITION SYSTÉMATIQUE (BATCH PARSING) :
-Si l'utilisateur transmet une liste de plusieurs créneaux ou routines :
-- Ne JAMAIS fusionner ni tronquer.
-- Génère AUTANT d'actions DISTINCTES dans "actions" qu'il y a d'activités individuelles.
-- Chaque action doit avoir son propre titre précis, ses startMin et endMin propres, et ses bons weekdays.
+FONCTIONNALITÉS SPÉCIFIQUES :
+- RETARD DÉCLARÉ ("J'ai 30 min de retard") : Décale les créneaux futurs de la journée en compressant légèrement les pauses pour sauver la journée.
+- PLANIFICATION D'OBJECTIF ("Examen dans 7 jours, 10h de révision") : Découpe en modules d'étude de 45-60 min répartis intelligemment sur les créneaux libres des jours à venir en respectant le chronotype.
+- DÉCOMPOSITION SYSTÉMATIQUE : Pour tout emploi du temps collé, génère une action distincte par activité sans jamais tronquer ni fusionner.
 
-FORMAT DE SORTIE STRICT EN JSON :
+FORMAT STRICT EN JSON :
 {
-  "response": "Court résumé chaleureux et clair en français.",
+  "response": "Court résumé chaleureux, clair et motivant en français.",
   "actions": [
     {
       "type": "add_routine",
@@ -245,5 +254,149 @@ FORMAT DE SORTIE STRICT EN JSON :
     }
 
     return (text: text, actions: actions);
+  }
+
+  /// Analyse intelligente de la répartition du temps (pour l'écran Statistiques)
+  static Future<String> analyzeProductivityStats({
+    required Map<String, double> categoryHours,
+    required double totalHours,
+    required String periodName,
+    String chronotype = 'morning',
+    String? apiKey,
+  }) async {
+    final effectiveKey = (apiKey != null && apiKey.trim().isNotEmpty)
+        ? apiKey.trim()
+        : AiConfig.geminiApiKey.trim();
+
+    if (effectiveKey.isEmpty) {
+      return 'Clé API non configurée.';
+    }
+
+    final catSummary = categoryHours.entries
+        .map((e) => '${e.key}: ${e.value.toStringAsFixed(1)}h (${(e.value / (totalHours > 0 ? totalHours : 1) * 100).toStringAsFixed(0)}%)')
+        .join(', ');
+
+    final prompt = '''
+Tu es le coach de productivité et de bien-être de l'application Kanlé.
+Voici la répartition du temps de l'utilisateur pour la période "$periodName" (Total: ${totalHours.toStringAsFixed(1)}h) :
+$catSummary
+Profil chronotype de l'utilisateur : $chronotype.
+
+Rédige une analyse synthétique, percutante, bienveillante et motivante en français :
+1. Un constat clair sur l'équilibre (points forts et déséquilibres éventuels travail/études/repos/foi/santé).
+2. Deux ou trois conseils très concrets pour réajuster le planning la semaine prochaine.
+Garde un ton encourageant, professionnel et concis (environ 150 mots maximum, avec des puces claires).
+''';
+
+    return await _callSimpleTextPrompt(prompt: prompt, apiKey: effectiveKey);
+  }
+
+  /// Génère un bilan de productivité personnalisé (Bilan Quotidien / Hebdomadaire)
+  static Future<String> generateProductivityReview({
+    required String periodName,
+    required List<TimeBlock> blocks,
+    required List<TaskItem> tasks,
+    required bool isWeekly,
+    String chronotype = 'morning',
+    String? apiKey,
+  }) async {
+    final effectiveKey = (apiKey != null && apiKey.trim().isNotEmpty)
+        ? apiKey.trim()
+        : AiConfig.geminiApiKey.trim();
+
+    if (effectiveKey.isEmpty) {
+      return 'Clé API non configurée.';
+    }
+
+    final blockCount = blocks.length;
+    final taskCount = tasks.length;
+    final totalMin = blocks.fold<int>(0, (sum, b) => sum + (b.endMin - b.startMin));
+    final hours = (totalMin / 60).toStringAsFixed(1);
+
+    final prompt = '''
+Tu es le coach de productivité de Kanlé.
+Voici le récapitulatif de l'activité pour la période "$periodName" :
+- Nombre de blocs de temps planifiés : $blockCount (représentant $hours heures).
+- Nombre de tâches/rappels enregistrés : $taskCount.
+- Type de bilan : ${isWeekly ? 'Hebdomadaire' : 'Quotidien'}.
+- Chronotype utilisateur : $chronotype.
+
+Rédige un Bilan Coach structuré en 3 parties :
+1. 👏 **Félicitations & Réalisations** (souligne l'effort fourni).
+2. 💡 **Points d'Optimisation** (ce qui peut être amélioré pour éviter la fatigue ou le déséquilibre).
+3. 🎯 **L'Action Clé pour Demain / la Semaine Prochaine** (une recommandation prioritaire).
+Sois chaleureux, inspirant et concis (moins de 180 mots).
+''';
+
+    return await _callSimpleTextPrompt(prompt: prompt, apiKey: effectiveKey);
+  }
+
+  /// Appel générique ultra-rapide pour des réponses textuelles avec cascade de modèles
+  static Future<String> _callSimpleTextPrompt({
+    required String prompt,
+    required String apiKey,
+  }) async {
+    final client = http.Client();
+    final modelsToTry = [
+      AiConfig.geminiModel,
+      ...AiConfig.fallbackModels,
+    ];
+
+    final reqBody = jsonEncode({
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {'text': prompt}
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': 0.4,
+      },
+    });
+
+    try {
+      for (final modelName in modelsToTry) {
+        try {
+          final url = Uri.parse(
+              'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent');
+          final resp = await client
+              .post(
+                url,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-goog-api-key': apiKey,
+                },
+                body: reqBody,
+              )
+              .timeout(const Duration(seconds: 10));
+
+          if (resp.statusCode == 200) {
+            final decoded = jsonDecode(resp.body);
+            final text = decoded['candidates']?[0]?['content']?['parts']?[0]?['text'] as String?;
+            if (text != null && text.isNotEmpty) {
+              return text.trim();
+            }
+          }
+        } catch (_) {}
+      }
+    } finally {
+      client.close();
+    }
+
+    // Fallback SDK
+    try {
+      final model = GenerativeModel(
+        model: AiConfig.geminiModel,
+        apiKey: apiKey,
+      );
+      final resp = await model
+          .generateContent([Content.text(prompt)])
+          .timeout(const Duration(seconds: 12));
+      return resp.text?.trim() ?? 'Impossible de générer l\'analyse pour le moment.';
+    } catch (e) {
+      return 'Erreur de connexion au coach IA : $e';
+    }
   }
 }

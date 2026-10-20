@@ -152,6 +152,31 @@ L'assistant IA mettait 12 à 18 secondes pour formuler une réponse et afficher 
 3. **Allègement du contexte système** : Réduction drastique des tokens envoyés au LLM (seuls les blocs pertinents du jour sont synthétisés).
 4. **Résultat chiffré** : Latence mesurée divisée par 6, passant de **15-18 secondes** à **2.24 secondes** sur des plannings complets (test réel d'intégration à 24 actions validé).
 
+### 3.6. Déploiement des 7 Nouvelles Fonctionnalités d'IA Avancées
+
+Conformément à la feuille de route produit, 7 modules d'intelligence artificielle ont été intégrés de bout en bout :
+
+1. **Réajustement Intelligent en Cas de Retard ("⚡ J'ai du retard")** :
+   - Accessible directement sur la timeline du Planning via un badge dynamique.
+   - Permet de déclarer un retard (+15, +30, +45, +60, +90 min) : l'algorithme décale automatiquement tous les créneaux futurs de la journée sans conflit et compresse intelligemment les pauses si la journée déborde en soirée.
+2. **Bilan Quotidien & Hebdomadaire ("✨ Bilan Coach IA")** :
+   - Bouton d'analyse sur le Planning générant un rapport en 3 axes : *Félicitations & Réalisations*, *Points d'Optimisation*, et *L'Action Clé pour Demain*.
+3. **Analyse et Conseils sur l'Écran Statistiques ("✨ Analyse IA du Temps")** :
+   - Bouton dédié dans l'en-tête de répartition des catégories (`stats_screen.dart`).
+   - L'IA interprète le graphique `fl_chart`, identifie les déséquilibres (études vs repos vs sport vs prière) et propose des ajustements ciblés.
+4. **Planification par Objectif ("🎯 Planifier par Objectif")** :
+   - Accessible via le chat et un dialogue modal dédié.
+   - Découpe un objectif (ex: examen dans 7 jours, 8 heures à faire) en modules d'étude de 45-60 min placés automatiquement sur les créneaux libres en respectant le rythme biologique.
+5. **Générateur de Packs de Routines Prédéfinies ("✨ Packs IA")** :
+   - Bouton dans l'écran Routines proposant 4 packs éprouvés : *Miracle Morning & Foi*, *Étudiant & Concours*, *Développeur & Deep Work*, *Sérénité & Clôture du Soir*.
+   - Installation en 1 clic avec synchronisation immédiate sur le planning.
+6. **Saisie Vocale Native Directe ("🎙️ Dictaphone Vocal IA")** :
+   - Bouton microphone intégré dans la barre de saisie de l'assistant (avec permission `RECORD_AUDIO` et intent `RecognitionService`).
+   - Transcription en temps réel en français avec détection automatique de fin d'enregistrement.
+7. **Planification Adaptée au Niveau d'Énergie (Chronotype)** :
+   - Sélecteur de profil énergétique dans les Paramètres : *🌅 Matinal (Alouette)*, *🌙 Du soir (Hibou)*, *⚖️ Équilibré*.
+   - Pris en compte par Gemini dans les prompts de planification pour positionner les créneaux cognitifs intenses aux heures de forme maximale.
+
 ---
 
 ## 4. Matrice de Validation & État de Santé Actuel
@@ -161,7 +186,7 @@ L'assistant IA mettait 12 à 18 secondes pour formuler une réponse et afficher 
 | **Analyse Statique / Linter** | `flutter analyze` | `No issues found! (0 errors, 0 warnings)` | ✅ CONFORME |
 | **Tests de Non-Régression** | `flutter test` | `00:00 +4: All tests passed!` | ✅ CONFORME |
 | **Parsing par Lots IA** | Test d'intégration Gemini | `24 actions atomiques générées sur le prompt réel` | ✅ CONFORME |
-| **Génération du Binaire** | `flutter build apk --release` | `build\app\outputs\flutter-apk\app-release.apk (55.0 MB)` | ✅ CONFORME |
+| **Génération du Binaire** | `flutter build apk --release` | `build\app\outputs\flutter-apk\app-release.apk (55.2 MB)` | ✅ CONFORME |
 | **Synchronisation Distante** | `git status` | `Your branch is up to date with 'origin/main'. Clean.` | ✅ CONFORME |
 
 ---

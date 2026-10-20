@@ -492,3 +492,191 @@ class ChatSession {
             .toList(),
       );
 }
+
+/// Modèle pour un élément de template de routine
+class RoutineTemplateItem {
+  final String title;
+  final int startMin;
+  final int endMin;
+  final String categoryId;
+  final List<int> weekdays;
+
+  const RoutineTemplateItem({
+    required this.title,
+    required this.startMin,
+    required this.endMin,
+    required this.categoryId,
+    this.weekdays = const [1, 2, 3, 4, 5, 6, 7],
+  });
+}
+
+/// Modèle pour un pack de routines prédéfinies ou générées par l'IA
+class RoutinePack {
+  final String id;
+  final String title;
+  final String description;
+  final String badge;
+  final List<RoutineTemplateItem> items;
+
+  const RoutinePack({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.badge,
+    required this.items,
+  });
+}
+
+/// Packs de routines intégrés à l'application
+const List<RoutinePack> kBuiltinRoutinePacks = [
+  RoutinePack(
+    id: 'miracle_morning',
+    title: 'Miracle Morning & Foi',
+    description: 'Réveil dynamique, prière, lecture biblique et exercice physique pour démarrer fort.',
+    badge: 'Populaire',
+    items: [
+      RoutineTemplateItem(
+        title: 'Prière matinale & Méditation',
+        startMin: 330, // 05:30
+        endMin: 370,   // 06:10
+        categoryId: 'prayer',
+      ),
+      RoutineTemplateItem(
+        title: 'Toilette & Verre d\'eau',
+        startMin: 370, // 06:10
+        endMin: 385,   // 06:25
+        categoryId: 'routine',
+      ),
+      RoutineTemplateItem(
+        title: 'Bible audio / Lecture sainte',
+        startMin: 385, // 06:25
+        endMin: 415,   // 06:55
+        categoryId: 'prayer',
+      ),
+      RoutineTemplateItem(
+        title: 'Sport & Étirements matinaux',
+        startMin: 415, // 06:55
+        endMin: 450,   // 07:30
+        categoryId: 'sport',
+      ),
+      RoutineTemplateItem(
+        title: 'Petit-déjeuner & Organisation',
+        startMin: 450, // 07:30
+        endMin: 480,   // 08:00
+        categoryId: 'routine',
+      ),
+    ],
+  ),
+  RoutinePack(
+    id: 'student_prep',
+    title: 'Étudiant & Concours',
+    description: 'Structure éprouvée pour réviser efficacement avec sessions espacées et pauses actives.',
+    badge: 'Productivité',
+    items: [
+      RoutineTemplateItem(
+        title: 'Session Focus 1 (Flashcards / Synthèse)',
+        startMin: 510, // 08:30
+        endMin: 600,   // 10:00
+        categoryId: 'study',
+        weekdays: [1, 2, 3, 4, 5, 6],
+      ),
+      RoutineTemplateItem(
+        title: 'Pause oxygénation & Hydratation',
+        startMin: 600, // 10:00
+        endMin: 615,   // 10:15
+        categoryId: 'rest',
+        weekdays: [1, 2, 3, 4, 5, 6],
+      ),
+      RoutineTemplateItem(
+        title: 'Session Focus 2 (Exercices & Problèmes)',
+        startMin: 615, // 10:15
+        endMin: 720,   // 12:00
+        categoryId: 'study',
+        weekdays: [1, 2, 3, 4, 5, 6],
+      ),
+      RoutineTemplateItem(
+        title: 'Revue des points clés de la journée',
+        startMin: 1170, // 19:30
+        endMin: 1230,   // 20:30
+        categoryId: 'study',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+    ],
+  ),
+  RoutinePack(
+    id: 'deep_work',
+    title: 'Développeur & Deep Work',
+    description: 'Protection maximale de l\'attention avec blocs de travail sans distraction.',
+    badge: 'Pro',
+    items: [
+      RoutineTemplateItem(
+        title: 'Daily Planning & Priorités du jour',
+        startMin: 540, // 09:00
+        endMin: 570,   // 09:30
+        categoryId: 'focus',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+      RoutineTemplateItem(
+        title: 'Deep Work Session (Code & Architecture)',
+        startMin: 570, // 09:30
+        endMin: 720,   // 12:00
+        categoryId: 'work',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+      RoutineTemplateItem(
+        title: 'Pause déjeuner & Marche dehors',
+        startMin: 720, // 12:00
+        endMin: 780,   // 13:00
+        categoryId: 'rest',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+      RoutineTemplateItem(
+        title: 'Revue de PR, Tests & Debugging',
+        startMin: 840, // 14:00
+        endMin: 990,   // 16:30
+        categoryId: 'work',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+      RoutineTemplateItem(
+        title: 'Clôture de journée & Bilan Git',
+        startMin: 1050, // 17:30
+        endMin: 1080,   // 18:00
+        categoryId: 'focus',
+        weekdays: [1, 2, 3, 4, 5],
+      ),
+    ],
+  ),
+  RoutinePack(
+    id: 'evening_peace',
+    title: 'Sérénité & Clôture du Soir',
+    description: 'Déconnexion progressive des écrans, calme, prière et préparation au sommeil.',
+    badge: 'Bien-être',
+    items: [
+      RoutineTemplateItem(
+        title: 'Rangement express & Préparation lendemain',
+        startMin: 1260, // 21:00
+        endMin: 1280,   // 21:20
+        categoryId: 'routine',
+      ),
+      RoutineTemplateItem(
+        title: 'Lecture inspirante ou psaume',
+        startMin: 1280, // 21:20
+        endMin: 1310,   // 21:50
+        categoryId: 'prayer',
+      ),
+      RoutineTemplateItem(
+        title: 'Prière du soir & Gratitude',
+        startMin: 1310, // 21:50
+        endMin: 1340,   // 22:20
+        categoryId: 'prayer',
+      ),
+      RoutineTemplateItem(
+        title: 'Sommeil réparateur (Coucher)',
+        startMin: 1350, // 22:30
+        endMin: 1440,   // 24:00
+        categoryId: 'rest',
+      ),
+    ],
+  ),
+];
+

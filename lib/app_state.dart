@@ -17,6 +17,7 @@ class AppState extends ChangeNotifier {
   static const _kCategories = 'categories_v1';
   static const _kChatSessions = 'chat_sessions_v1';
   static const _kCurrentSessionId = 'current_session_id_v1';
+  static const _kChronotype = 'chronotype_v1';
   final _uuid = const Uuid();
 
   List<TimeBlock> blocks = [];
@@ -27,6 +28,7 @@ class AppState extends ChangeNotifier {
   String? currentSessionId;
   String geminiApiKey = '';
   bool isAiLoading = false;
+  String chronotype = 'morning'; // 'morning', 'evening', 'balanced'
 
   DateTime selectedDate = DateTime.now();
   int defaultReminder = 10;
@@ -69,6 +71,7 @@ class AppState extends ChangeNotifier {
     _prefs = await SharedPreferences.getInstance();
     defaultReminder = _prefs!.getInt(_kDefaultReminder) ?? 10;
     geminiApiKey = _prefs!.getString(_kGeminiApiKey) ?? '';
+    chronotype = _prefs!.getString(_kChronotype) ?? 'morning';
     final b = _prefs!.getString(_kBlocks);
     final r = _prefs!.getString(_kRoutines);
     final t = _prefs!.getString(_kTasks);
@@ -486,9 +489,99 @@ class AppState extends ChangeNotifier {
     }
     _prefs?.setString(
         _kChatHistory, jsonEncode(chatHistory.map((e) => e.toJson()).toList()));
-    _prefs?.setString(_kGeminiApiKey, geminiApiKey);
+    _prefs?.setString(_kChronotype, chronotype);
     _prefs?.setStringList(_kApplied, _applied.toList());
     _prefs?.setInt(_kDefaultReminder, defaultReminder);
+  }
+
+  /// Met à jour le chronotype (matin, soir, équilibré)
+  void setChronotype(String val) {
+    chronotype = val;
+    _prefs?.setString(_kChronotype, val);
+    notifyListeners();
+  }
+
+  /// Décale intelligemment tous les blocs futurs de la journée de [delayMinutes]
+  /// à partir de [fromMinute] (ou de l'heure actuelle si null).
+  /// Compresse légèrement les créneaux de pause/détente si la journée déborde après 23h.
+  int applySmartDelayAdjustment({
+    required String dateStr,
+    required int delayMinutes,
+    int? fromMinute,
+  }) {
+    if (delayMinutes <= 0) return 0;
+    final now = DateTime.now();
+    final startPivot = fromMinute ?? (now.hour * 60 + now.minute);
+
+    final dayBlocks = blocks.where((b) => b.date == dateStr).toList()
+      ..sort((a, b) => a.startMin.compareTo(b.startMin));
+
+    final futureBlocks = dayBlocks.where((b) => b.endMin > startPivot).toList();
+    if (futureBlocks.isEmpty) return 0;
+
+    var modifiedCount = 0;
+    var currentCursor = (startPivot + delayMinutes).clamp(0, 24 * 60);
+
+    for (final b in futureBlocks) {
+      final oldDuration = b.endMin - b.startMin;
+      var duration = oldDuration;
+      // Si on approche de la nuit, compresser légèrement les pauses
+      if (currentCursor + duration > 23 * 60 + 45) {
+        if (b.categoryId == 'rest' || b.categoryId == 'routine') {
+          duration = (duration * 0.75).round().clamp(15, oldDuration);
+        }
+      }
+
+      final newStart = currentCursor.clamp(0, 24 * 60 - 15);
+      final newEnd = (newStart + duration).clamp(0, 24 * 60);
+
+      if (b.startMin != newStart || b.endMin != newEnd) {
+        b.startMin = newStart;
+        b.endMin = newEnd;
+        NotificationService.schedule(b);
+        modifiedCount++;
+      }
+
+      currentCursor = newEnd;
+    }
+
+    if (modifiedCount > 0) {
+      _save();
+      notifyListeners();
+    }
+    return modifiedCount;
+  }
+
+  /// Installe un pack complet de routines prédéfinies ou générées par l'IA
+  int installRoutinePack(RoutinePack pack) {
+    var installed = 0;
+    for (final item in pack.items) {
+      final exists = routines.any((r) =>
+          r.title.trim().toLowerCase() == item.title.trim().toLowerCase() &&
+          r.startMin == item.startMin &&
+          r.endMin == item.endMin);
+      if (!exists) {
+        final r = Routine(
+          id: newId(),
+          title: item.title,
+          colorValue: getCategoryById(item.categoryId, categories).defaultColor.value,
+          startMin: item.startMin,
+          endMin: item.endMin,
+          weekdays: item.weekdays.toSet(),
+          categoryId: item.categoryId,
+        );
+        routines.add(r);
+        installed++;
+      }
+    }
+
+    if (installed > 0) {
+      // Synchroniser immédiatement les routines installées sur la semaine
+      applyWeek(selectedDate);
+      _save();
+      notifyListeners();
+    }
+    return installed;
   }
 
   // ==========================================
@@ -1135,6 +1228,7 @@ class AppState extends ChangeNotifier {
         currentDate: selectedDate,
         currentBlocks: blocks,
         currentTasks: tasks,
+        chronotype: chronotype,
       );
 
       final assistantMsg = ChatMessage(
