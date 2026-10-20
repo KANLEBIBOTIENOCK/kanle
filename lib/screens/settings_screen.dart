@@ -614,24 +614,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
-                ListTile(
-                  leading: const Icon(Icons.bolt_rounded, color: Color(0xFFFDCB6E)),
-                  title: const Text('Profil d\'énergie (Chronotype)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
-                  subtitle: const Text('Adapte le placement des blocs de travail intense selon vos heures de forme', style: TextStyle(fontSize: 12)),
-                  trailing: DropdownButton<String>(
-                    value: s.chronotype,
-                    underline: const SizedBox.shrink(),
-                    items: const [
-                      DropdownMenuItem(value: 'morning', child: Text('🌅 Matinal (Alouette)')),
-                      DropdownMenuItem(value: 'evening', child: Text('🌙 Du soir (Hibou)')),
-                      DropdownMenuItem(value: 'balanced', child: Text('⚖️ Équilibré')),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.bolt_rounded, color: Color(0xFFFDCB6E)),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Profil d\'énergie (Chronotype)',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.brightness == Brightness.dark
+                                  ? const Color(0xFF2C2C2E)
+                                  : const Color(0xFFF1F2F6),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: s.chronotype,
+                                isDense: true,
+                                icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
+                                items: const [
+                                  DropdownMenuItem(value: 'morning', child: Text('🌅 Matinal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                                  DropdownMenuItem(value: 'evening', child: Text('🌙 Du soir', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                                  DropdownMenuItem(value: 'balanced', child: Text('⚖️ Équilibré', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    HapticFeedback.selectionClick();
+                                    s.setChronotype(v);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 36),
+                        child: Text(
+                          'Adapte le placement des blocs de travail intense selon vos heures de forme',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.brightness == Brightness.dark ? const Color(0xFFAAAAAA) : const Color(0xFF747D8C),
+                          ),
+                        ),
+                      ),
                     ],
-                    onChanged: (v) {
-                      if (v != null) {
-                        HapticFeedback.selectionClick();
-                        s.setChronotype(v);
-                      }
-                    },
                   ),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
